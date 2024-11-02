@@ -1,14 +1,16 @@
 #include <Windows.h>
 #include <crtdbg.h>
+
 #include <exception>
 
-static int g_width  = 800;
-static int g_height = 600;
+#include "DirectX12.hpp"
+
 
 HWND createWindow(const wchar_t* name, int width, int height);
 // Call after creating DirectX resources
 void updateWindow(HWND hWnd);
 LRESULT CALLBACK wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 {
@@ -16,8 +18,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 #endif
 
-    auto hWnd = createWindow(L"LearnDirectX12", g_width, g_height);
-    // TODO: Create DX12 Resources
+    int width  = 800;
+    int height = 600;
+
+    auto hWnd = createWindow(L"LearnDirectX12", width, height);
+    DirectX12 dx12(hWnd, width, height);
     updateWindow(hWnd);
 
     MSG msg = {};
@@ -29,7 +34,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
             DispatchMessageW(&msg);
         }
     
-        // TODO: Render here
+        dx12.render();
     }
 }
 
