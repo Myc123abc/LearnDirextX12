@@ -6,9 +6,76 @@ using namespace Microsoft::WRL;
 
 #define ThrowIfFailed(x) if (FAILED(x)) throw std::exception();
 
-DirectX12::DirectX12(HWND hWnd, int width, int height)
+static DirectX12* DX12;
+
+LRESULT CALLBACK wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    return DX12->wndProc(hWnd, msg, wParam, lParam);
+}
+
+LRESULT CALLBACK DirectX12::wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    switch (msg)
+    {
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        return 0;
+
+    case WM_MENUCHAR:
+        // Disable beep when Alt + Enter
+        return MAKELRESULT(0, MNC_CLOSE);
+
+    case WM_SIZE: 
+        m_width  = LOWORD(lParam);
+        m_height = LOWORD(lParam);
+    case WM_EXITSIZEMOVE:
+        onResize();
+        return 0;
+    }
+    return DefWindowProcW(hWnd, msg, wParam, lParam);
+}
+
+DirectX12::DirectX12(int width, int height)
     : m_width(width), m_height(height)
 {
+    // ---------------
+    //  Create window
+    // ---------------
+
+    DX12 = this;
+
+    const wchar_t name[] = L"LearnDirectX12";
+
+    auto hInstance = GetModuleHandleW(nullptr);
+
+    WNDCLASSEXW wc = {};
+    wc.cbSize        = sizeof(wc);
+    wc.hInstance     = hInstance;
+    wc.lpszClassName = name;
+    wc.style         = CS_HREDRAW | CS_VREDRAW;
+    wc.lpfnWndProc   = ::wndProc;
+    if (RegisterClassExW(&wc) == 0)
+        throw std::exception("RegisterClassExW Error");
+
+    // Adjust real size, include title bar
+    RECT rect = { 0, 0, width, height };
+    AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, false);
+    width  = rect.right - rect.left;
+    height = rect.bottom - rect.top;
+
+    auto hWnd = CreateWindowW(
+        name, nullptr,
+        WS_OVERLAPPEDWINDOW,
+        //WS_POPUP, // If use popup(without title bar), you should also to delete code that adjust window real size
+        CW_USEDEFAULT, CW_USEDEFAULT, width, height,
+        nullptr, nullptr, hInstance, nullptr
+    );
+    if (hWnd == nullptr)
+        throw std::exception("CreateWindowW Error"); 
+
+    ShowWindow(hWnd, SW_SHOW);
+    UpdateWindow(hWnd);
+
     // --------------------------
     //  Enable debug information
     // --------------------------
@@ -175,6 +242,8 @@ DirectX12::DirectX12(HWND hWnd, int width, int height)
 
     m_scissorRect.right  = m_width;
     m_scissorRect.bottom = m_height;
+
+    onResize();
 }
 
 void DirectX12::render()
@@ -221,6 +290,84 @@ void DirectX12::render()
     ThrowIfFailed(m_swapChain->Present(0, 0));
     m_currentBackbufferIndex = (m_currentBackbufferIndex + 1) % 2;
 
+    flushCommandQueue();
+}
+
+void DirectX12::onResize()
+{
+    // Wait GPU finish commands
+    flushCommandQueue();
+
+    // Reset command list
+    ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
+
+    // Reset back buffers and swap chain
+    m_backbuffers[0].Reset();
+    m_backbuffers[1].Reset();
+
+    ThrowIfFailed(m_swapChain->ResizeBuffers(
+        2, 
+        m_width, m_height, 
+        m_backBufferFormat, 
+        DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH)
+    );
+
+    m_currentBackbufferIndex = 0;
+
+    auto rtvHandle = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
+    for (int i = 0; i < 2; ++i)
+    {
+        ThrowIfFailed(m_swapChain->GetBuffer(i, IID_PPV_ARGS(m_backbuffers[i].GetAddressOf())));
+        m_device->CreateRenderTargetView(m_backbuffers[i].Get(), nullptr, rtvHandle);
+        rtvHandle.ptr += m_rtvDescriptorSize;
+    }
+
+    // Reset depth buffer and descriptor
+    D3D12_RESOURCE_DESC resourceDesc = {};
+    resourceDesc.Dimension           = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    resourceDesc.Width               = m_width;
+    resourceDesc.Height              = m_height;
+    resourceDesc.DepthOrArraySize    = 1;
+    resourceDesc.MipLevels           = 1;
+    resourceDesc.Format              = DXGI_FORMAT_R24G8_TYPELESS;
+    resourceDesc.SampleDesc.Count    = 1;
+    resourceDesc.Flags               = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+
+    D3D12_CLEAR_VALUE clearVal  = {};
+    clearVal.Format             = m_depthBufferFormat;
+    clearVal.DepthStencil.Depth = 1.f;
+
+    D3D12_HEAP_PROPERTIES heapProperties = {};
+    heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;
+
+    ThrowIfFailed(m_device->CreateCommittedResource(
+        &heapProperties, 
+        D3D12_HEAP_FLAG_NONE, 
+        &resourceDesc, 
+        D3D12_RESOURCE_STATE_DEPTH_WRITE,
+        &clearVal, 
+        IID_PPV_ARGS(m_depthBuffer.GetAddressOf())
+    ));
+
+    D3D12_DEPTH_STENCIL_VIEW_DESC desc = {};
+    desc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+    desc.Format        = m_depthBufferFormat;
+    m_device->CreateDepthStencilView(m_depthBuffer.Get(), &desc, m_dsvHeap->GetCPUDescriptorHandleForHeapStart());
+
+    // Execute commands
+    ThrowIfFailed(m_commandList->Close());
+    m_commandQueue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList**>(m_commandList.GetAddressOf()));
+
+    flushCommandQueue();
+
+    // Reset viewport and scissor rectangle
+    m_viewport.Width  = static_cast<float>(m_width);
+    m_viewport.Height = static_cast<float>(m_height);
+    m_scissorRect = { 0, 0, m_width, m_height };
+}
+
+void DirectX12::flushCommandQueue()
+{
     // Wait GPU execute complete
     static UINT64 fence;
     ++fence;

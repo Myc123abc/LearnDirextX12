@@ -7,7 +7,7 @@
 class DirectX12 final
 {
 public:
-    DirectX12(HWND hWnd, int width, int height);
+    DirectX12(int width, int height);
     ~DirectX12() = default;
     
     DirectX12(const DirectX12&)            = delete;
@@ -16,6 +16,13 @@ public:
     DirectX12& operator=(DirectX12&&)      = delete;
 
     void render();
+
+    void onResize();
+
+    LRESULT CALLBACK wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+private:
+    void flushCommandQueue();
 
 private:
     int m_width, m_height;
