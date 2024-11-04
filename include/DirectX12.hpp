@@ -4,8 +4,14 @@
 #include <d3d12.h>
 #include <dxgi1_4.h>
 
-class DirectX12 final
+#include "Window.hpp"
+
+class DirectX12 final : public BaseWindow<DirectX12>
 {
+public:
+    PCWSTR getClassName() const noexcept override { return L"LearnDirectX12"; }
+    LRESULT handleMessage(UINT msg, WPARAM wParam, LPARAM lParam) override;
+
 public:
     DirectX12(int width, int height);
     ~DirectX12() = default;

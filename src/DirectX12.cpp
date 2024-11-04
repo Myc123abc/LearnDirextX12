@@ -6,14 +6,8 @@ using namespace Microsoft::WRL;
 
 #define ThrowIfFailed(x) if (FAILED(x)) throw std::exception();
 
-static DirectX12* DX12;
 
-LRESULT CALLBACK wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
-    return DX12->wndProc(hWnd, msg, wParam, lParam);
-}
-
-LRESULT CALLBACK DirectX12::wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+LRESULT DirectX12::handleMessage(UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg)
     {
@@ -26,13 +20,14 @@ LRESULT CALLBACK DirectX12::wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
         return MAKELRESULT(0, MNC_CLOSE);
 
     case WM_SIZE: 
+        // TODO: need to read Box.sln
         m_width  = LOWORD(lParam);
         m_height = LOWORD(lParam);
     case WM_EXITSIZEMOVE:
         onResize();
         return 0;
     }
-    return DefWindowProcW(hWnd, msg, wParam, lParam);
+    return DefWindowProcW(m_hWnd, msg, wParam, lParam);
 }
 
 DirectX12::DirectX12(int width, int height)
@@ -42,39 +37,8 @@ DirectX12::DirectX12(int width, int height)
     //  Create window
     // ---------------
 
-    DX12 = this;
-
-    const wchar_t name[] = L"LearnDirectX12";
-
-    auto hInstance = GetModuleHandleW(nullptr);
-
-    WNDCLASSEXW wc = {};
-    wc.cbSize        = sizeof(wc);
-    wc.hInstance     = hInstance;
-    wc.lpszClassName = name;
-    wc.style         = CS_HREDRAW | CS_VREDRAW;
-    wc.lpfnWndProc   = ::wndProc;
-    if (RegisterClassExW(&wc) == 0)
-        throw std::exception("RegisterClassExW Error");
-
-    // Adjust real size, include title bar
-    RECT rect = { 0, 0, width, height };
-    AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, false);
-    width  = rect.right - rect.left;
-    height = rect.bottom - rect.top;
-
-    auto hWnd = CreateWindowW(
-        name, nullptr,
-        WS_OVERLAPPEDWINDOW,
-        //WS_POPUP, // If use popup(without title bar), you should also to delete code that adjust window real size
-        CW_USEDEFAULT, CW_USEDEFAULT, width, height,
-        nullptr, nullptr, hInstance, nullptr
-    );
-    if (hWnd == nullptr)
-        throw std::exception("CreateWindowW Error"); 
-
-    ShowWindow(hWnd, SW_SHOW);
-    UpdateWindow(hWnd);
+    // TODO: The more better window way haven't?
+    BaseWindow::create(m_width, m_height, L"LearnDirectX12");
 
     // --------------------------
     //  Enable debug information
@@ -153,7 +117,7 @@ DirectX12::DirectX12(int width, int height)
     swapChainDesc.SampleDesc.Count  = 1;
     swapChainDesc.BufferUsage       = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     swapChainDesc.BufferCount       = 2;
-    swapChainDesc.OutputWindow      = hWnd;
+    swapChainDesc.OutputWindow      = getHWnd();
     swapChainDesc.Windowed          = true;
     swapChainDesc.SwapEffect        = DXGI_SWAP_EFFECT_FLIP_DISCARD;
     swapChainDesc.Flags             = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
@@ -164,7 +128,7 @@ DirectX12::DirectX12(int width, int height)
     ));
 
     // Disable Alt + Enter to fullscreen, it will lead ComPtr release error
-    ThrowIfFailed(m_factory->MakeWindowAssociation(hWnd, DXGI_MWA_NO_ALT_ENTER));
+    ThrowIfFailed(m_factory->MakeWindowAssociation(getHWnd(), DXGI_MWA_NO_ALT_ENTER));
 
     // ---------------------------------------
     //  Get descriptor size
@@ -243,7 +207,7 @@ DirectX12::DirectX12(int width, int height)
     m_scissorRect.right  = m_width;
     m_scissorRect.bottom = m_height;
 
-    onResize();
+    BaseWindow::show();
 }
 
 void DirectX12::render()
