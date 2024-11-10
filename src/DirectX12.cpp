@@ -1,44 +1,134 @@
 #include "DirectX12.hpp"
+#include "Util.hpp"
 
+#include <string>
 #include <exception>
+#include <format>
+
+#include <assert.h>
 
 using namespace Microsoft::WRL;
+using namespace Util;
 
 #define ThrowIfFailed(x) if (FAILED(x)) throw std::exception();
+#define ThrowIfFalse(x)  if (!x) throw std::exception();
 
-
-LRESULT DirectX12::handleMessage(UINT msg, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg)
     {
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
+    
+    case WM_KEYUP:
+        if (wParam == VK_ESCAPE)
+            PostQuitMessage(0);
+        return 0;
+    
+    case WM_GETMINMAXINFO:
+        reinterpret_cast<MINMAXINFO*>(lParam)->ptMinTrackSize.x = 200;
+        reinterpret_cast<MINMAXINFO*>(lParam)->ptMinTrackSize.y = 200;
+        return 0;
 
     case WM_MENUCHAR:
         // Disable beep when Alt + Enter
         return MAKELRESULT(0, MNC_CLOSE);
+    }
+    return DirectX12::get()->wndProc(hWnd, msg, wParam, lParam);
+}
 
-    case WM_SIZE: 
-        // TODO: need to read Box.sln
+LRESULT DirectX12::wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{    
+    switch (msg)
+    {
+    case WM_ACTIVATE:
+        if (LOWORD(wParam) == WA_INACTIVE)
+        {
+            m_paused = true;
+            m_timer.pause();
+        }
+        else
+        {
+            m_paused = false;
+            m_timer.resume();
+        }
+        return 0;
+    
+    case WM_SIZE:
         m_width  = LOWORD(lParam);
-        m_height = LOWORD(lParam);
+        m_height = HIWORD(lParam);
+        if (m_device)
+        {
+            if (wParam == SIZE_MINIMIZED)
+            {
+                m_minimized = true;
+                m_maximized = false;
+            }
+            else if (wParam == SIZE_MAXIMIZED)
+            {
+                m_minimized = false;
+                m_maximized = true;
+                onResize();
+            }
+            else if (wParam == SIZE_RESTORED)
+            {
+                if (m_minimized)
+                {
+                    m_minimized = false;
+                    onResize();
+                }
+                else if (m_maximized)
+                {
+                    m_maximized = false;
+                    onResize();
+                }
+                else if (m_resizing)
+                {
+
+                }
+                else
+                {
+                    onResize();
+                }
+            }
+        }
+        return 0;
+
+    case WM_ENTERSIZEMOVE:
+        m_paused   = true;
+        m_resizing = true;
+        m_timer.pause();
+        return 0;
+
     case WM_EXITSIZEMOVE:
-        onResize();
+        m_paused   = false;
+        m_resizing = false;
+        m_timer.resume();
         return 0;
     }
-    return DefWindowProcW(m_hWnd, msg, wParam, lParam);
+    return DefWindowProcW(hWnd, msg, wParam, lParam);
 }
 
 DirectX12::DirectX12(int width, int height)
     : m_width(width), m_height(height)
 {
+   // Singleton
+    assert(s_pThis == nullptr);
+    s_pThis = this;
+
+    enableMemCheck();
+
     // ---------------
     //  Create window
     // ---------------
-
-    // TODO: The more better window way haven't?
-    BaseWindow::create(m_width, m_height, L"LearnDirectX12");
+    WindowConfig config;
+    config.className = L"LearnDirectX12";
+    config.width     = m_width;
+    config.height    = m_height;
+    config.wndProc   = ::wndProc;
+    m_hWnd = createWindow(config);
+    ThrowIfFalse(m_hWnd);
 
     // --------------------------
     //  Enable debug information
@@ -117,7 +207,7 @@ DirectX12::DirectX12(int width, int height)
     swapChainDesc.SampleDesc.Count  = 1;
     swapChainDesc.BufferUsage       = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     swapChainDesc.BufferCount       = 2;
-    swapChainDesc.OutputWindow      = getHWnd();
+    swapChainDesc.OutputWindow      = m_hWnd;
     swapChainDesc.Windowed          = true;
     swapChainDesc.SwapEffect        = DXGI_SWAP_EFFECT_FLIP_DISCARD;
     swapChainDesc.Flags             = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
@@ -128,7 +218,7 @@ DirectX12::DirectX12(int width, int height)
     ));
 
     // Disable Alt + Enter to fullscreen, it will lead ComPtr release error
-    ThrowIfFailed(m_factory->MakeWindowAssociation(getHWnd(), DXGI_MWA_NO_ALT_ENTER));
+    ThrowIfFailed(m_factory->MakeWindowAssociation(m_hWnd, DXGI_MWA_NO_ALT_ENTER));
 
     // ---------------------------------------
     //  Get descriptor size
@@ -207,7 +297,41 @@ DirectX12::DirectX12(int width, int height)
     m_scissorRect.right  = m_width;
     m_scissorRect.bottom = m_height;
 
-    BaseWindow::show();
+    // Initialize DirectX12 resources finished, show window
+    showWindow(m_hWnd);
+}
+
+void DirectX12::run()
+{
+    MSG msg = {};
+
+    m_timer.setFunc([this] {
+        SetWindowTextA(this->m_hWnd, std::format("time:{} fps:{} mspf:{:.2f}", (int)m_timer.getTime(), (int)m_timer.getFPS(), m_timer.getMSPF()).c_str());
+    });
+    m_timer.reset();
+
+    while (msg.message != WM_QUIT)
+    {
+        if (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE))
+        {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+        else
+        {
+            m_timer.update();
+            m_timer.calculateFrameState();
+
+            if (!m_paused)
+            {
+                render();
+            }
+            else
+            {
+                Sleep(100);
+            }
+        }
+    }
 }
 
 void DirectX12::render()

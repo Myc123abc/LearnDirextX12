@@ -1,25 +1,35 @@
 #pragma once
 
+#include "Timer.hpp"
+
 #include <wrl.h>
 #include <d3d12.h>
 #include <dxgi1_4.h>
 
-#include "Window.hpp"
-
-class DirectX12 final : public BaseWindow<DirectX12>
+class DirectX12
 {
 public:
-    PCWSTR getClassName() const noexcept override { return L"LearnDirectX12"; }
-    LRESULT handleMessage(UINT msg, WPARAM wParam, LPARAM lParam) override;
-
-public:
     DirectX12(int width, int height);
-    ~DirectX12() = default;
+    ~DirectX12() {
+        Microsoft::WRL::ComPtr<ID3D12DebugDevice> debugDevice;
+if (SUCCEEDED(m_device->QueryInterface(IID_PPV_ARGS(&debugDevice))))
+{
+    debugDevice->ReportLiveDeviceObjects(D3D12_RLDO_DETAIL);
+}
+
+    }
     
     DirectX12(const DirectX12&)            = delete;
     DirectX12(DirectX12&&)                 = delete;
     DirectX12& operator=(const DirectX12&) = delete;
     DirectX12& operator=(DirectX12&&)      = delete;
+
+    static DirectX12* get() noexcept
+    {
+        return s_pThis;
+    }
+
+    void run();
 
     void render();
 
@@ -31,7 +41,16 @@ private:
     void flushCommandQueue();
 
 private:
-    int m_width, m_height;
+    inline static DirectX12* s_pThis = nullptr; // For singleton
+
+    HWND m_hWnd;
+    int  m_width, m_height;
+    bool m_paused    = false;
+    bool m_minimized = false;
+    bool m_maximized = false;
+    bool m_resizing  = false;
+
+    GalgameEngine::Timer m_timer;
 
     Microsoft::WRL::ComPtr<IDXGIFactory4> m_factory;    // Use for hardware and display management
                                                         // such as enumerating available GPUs, creating swap chains, managing display-related events
