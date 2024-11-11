@@ -10,15 +10,8 @@ class DirectX12
 {
 public:
     DirectX12(int width, int height);
-    ~DirectX12() {
-        Microsoft::WRL::ComPtr<ID3D12DebugDevice> debugDevice;
-if (SUCCEEDED(m_device->QueryInterface(IID_PPV_ARGS(&debugDevice))))
-{
-    debugDevice->ReportLiveDeviceObjects(D3D12_RLDO_DETAIL);
-}
+    ~DirectX12() = default;
 
-    }
-    
     DirectX12(const DirectX12&)            = delete;
     DirectX12(DirectX12&&)                 = delete;
     DirectX12& operator=(const DirectX12&) = delete;

@@ -11,7 +11,7 @@ using namespace Microsoft::WRL;
 using namespace Util;
 
 #define ThrowIfFailed(x) if (FAILED(x)) throw std::exception();
-#define ThrowIfFalse(x)  if (!x) throw std::exception();
+#define ThrowIfFalse(x)  if (!x)        throw std::exception();
 
 LRESULT CALLBACK wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
