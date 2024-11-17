@@ -2,16 +2,15 @@
 #include "Util.hpp"
 
 #include <string>
-#include <exception>
 #include <format>
+#include <algorithm>
+#include <numbers>
 
 #include <assert.h>
 
 using namespace Microsoft::WRL;
 using namespace Util;
 
-#define ThrowIfFailed(x) if (FAILED(x)) throw std::exception();
-#define ThrowIfFalse(x)  if (!x)        throw std::exception();
 
 LRESULT CALLBACK wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -39,7 +38,7 @@ LRESULT CALLBACK wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 }
 
 LRESULT DirectX12::wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{    
+{ 
     switch (msg)
     {
     case WM_ACTIVATE:
@@ -106,12 +105,31 @@ LRESULT DirectX12::wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         m_resizing = false;
         m_timer.resume();
         return 0;
+
+    case WM_LBUTTONDOWN:
+    case WM_MBUTTONDOWN:
+    case WM_RBUTTONDOWN:
+        onMouseDown(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+        return 0;
+
+    case WM_LBUTTONUP:
+    case WM_MBUTTONUP:
+    case WM_RBUTTONUP:
+        onMouseUp(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+        return 0;
+
+    case WM_MOUSEMOVE:
+        onMouseMove(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+        return 0;
+
+    case WM_MOUSEWHEEL:
+        onMouseWheel(wParam);
+        return 0;
     }
     return DefWindowProcW(hWnd, msg, wParam, lParam);
 }
 
-DirectX12::DirectX12(int width, int height)
-    : m_width(width), m_height(height)
+DirectX12::DirectX12()
 {
    // Singleton
     assert(s_pThis == nullptr);
@@ -296,9 +314,6 @@ DirectX12::DirectX12(int width, int height)
 
     m_scissorRect.right  = m_width;
     m_scissorRect.bottom = m_height;
-
-    // Initialize DirectX12 resources finished, show window
-    showWindow(m_hWnd);
 }
 
 void DirectX12::run()
@@ -309,6 +324,9 @@ void DirectX12::run()
         SetWindowTextA(this->m_hWnd, std::format("time:{} fps:{} mspf:{:.2f}", (int)m_timer.getTime(), (int)m_timer.getFPS(), m_timer.getMSPF()).c_str());
     });
     m_timer.reset();
+
+    // Initialize DirectX12 resources finished, show window
+    showWindow(m_hWnd);
 
     while (msg.message != WM_QUIT)
     {
@@ -324,7 +342,10 @@ void DirectX12::run()
 
             if (!m_paused)
             {
-                render();
+                update();
+                drawBegin();
+                draw();
+                drawEnd();
             }
             else
             {
@@ -334,11 +355,11 @@ void DirectX12::run()
     }
 }
 
-void DirectX12::render()
+void DirectX12::drawBegin()
 {
     // Reset command list and allocator
     ThrowIfFailed(m_commandAllocator->Reset());
-    ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
+    ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), m_pso.Get()));
 
     // Reset viewport and scissor rectangle
     // These need to be reset when the command list is reset
@@ -346,11 +367,9 @@ void DirectX12::render()
     m_commandList->RSSetScissorRects(1, &m_scissorRect);
 
     // Convert back buffer state from present to render target
-    D3D12_RESOURCE_BARRIER barrier = {};
-    barrier.Transition.pResource   = m_backbuffers[m_currentBackbufferIndex].Get();
-    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
-    barrier.Transition.StateAfter  = D3D12_RESOURCE_STATE_RENDER_TARGET;
-    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+        m_backbuffers[m_currentBackbufferIndex].Get(), 
+        D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
     m_commandList->ResourceBarrier(1, &barrier);
 
     // Clear back buffers and depth buffer
@@ -360,14 +379,17 @@ void DirectX12::render()
     // Clear color
     static constexpr float color[] = { 40.f / 255, 44.f / 255, 52.f / 255, 1.f };
     m_commandList->ClearRenderTargetView(backBufferDescriptorHandle, color, 0, nullptr);
-    m_commandList->ClearDepthStencilView(depthBufferDescriptorHandle, D3D12_CLEAR_FLAG_DEPTH, 1.f, 0, 0, nullptr);
+    m_commandList->ClearDepthStencilView(depthBufferDescriptorHandle, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.f, 0, 0, nullptr);
 
     // Set render target
     m_commandList->OMSetRenderTargets(1, &backBufferDescriptorHandle, true, &depthBufferDescriptorHandle);
+}
 
-    // Revert back buffer state
-    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
-    barrier.Transition.StateAfter  = D3D12_RESOURCE_STATE_PRESENT;
+void DirectX12::drawEnd()
+{
+    auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+        m_backbuffers[m_currentBackbufferIndex].Get(), 
+        D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
     m_commandList->ResourceBarrier(1, &barrier);
 
     // Close commit list
@@ -474,4 +496,52 @@ void DirectX12::flushCommandQueue()
         WaitForSingleObject(eventHandle, INFINITE);
         CloseHandle(eventHandle);
     }
+}
+
+void DirectX12::onMouseDown(WPARAM btnState, int x, int y)
+{
+    m_mousePosition.x = x;
+    m_mousePosition.y = y;
+    SetCapture(m_hWnd);
+}
+
+void DirectX12::onMouseUp(WPARAM btnState, int x, int y) 
+{
+    ReleaseCapture();
+}
+
+void DirectX12::onMouseMove(WPARAM btnState, int x, int y) 
+{
+    if (btnState & MK_LBUTTON)
+    {
+        float dx = DirectX::XMConvertToRadians(0.25f * static_cast<float>(x - m_mousePosition.x));
+        float dy = DirectX::XMConvertToRadians(0.25f * static_cast<float>(y - m_mousePosition.y));
+
+        m_theta -= dx;
+        m_phi   -= dy;
+
+        m_phi = std::clamp(m_phi, 0.1f, std::numbers::pi_v<float> - 0.1f);
+    }
+    else if (btnState & MK_RBUTTON)
+    {
+        float dx = 0.005f * static_cast<float>(x - m_mousePosition.x);
+        float dy = 0.005f * static_cast<float>(y - m_mousePosition.y);
+
+        m_radius -= dx - dy;
+        m_radius = std::clamp(m_radius, 3.f, 15.f);
+    }
+
+    m_mousePosition.x = x;
+    m_mousePosition.y = y;
+}
+
+void DirectX12::onMouseWheel(WPARAM wParam)
+{
+    auto delta = GET_WHEEL_DELTA_WPARAM(wParam);
+
+    constexpr float zoomSensitivity = 0.005f;
+
+    m_radius -= delta * zoomSensitivity;
+
+    m_radius = std::clamp(m_radius, 3.f, 15.f);
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Timer.hpp"
+#include "DirectX12Util.hpp"
 
 #include <wrl.h>
 #include <d3d12.h>
@@ -9,7 +10,7 @@
 class DirectX12
 {
 public:
-    DirectX12(int width, int height);
+    DirectX12();
     ~DirectX12() = default;
 
     DirectX12(const DirectX12&)            = delete;
@@ -24,20 +25,30 @@ public:
 
     void run();
 
-    void render();
-
-    void onResize();
-
     LRESULT CALLBACK wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-private:
+protected:
     void flushCommandQueue();
 
+    virtual void onResize();
+    virtual void update() {}
+    virtual void draw()   {}
+
+    virtual void onMouseDown(WPARAM btnState, int x, int y);
+    virtual void onMouseUp(WPARAM btnState, int x, int y);
+    virtual void onMouseMove(WPARAM btnState, int x, int y);
+    virtual void onMouseWheel(WPARAM wParam);
+
 private:
+    void drawBegin();
+    void drawEnd();
+
+protected:
     inline static DirectX12* s_pThis = nullptr; // For singleton
 
     HWND m_hWnd;
-    int  m_width, m_height;
+    int  m_width     = 800;
+    int  m_height    = 600;
     bool m_paused    = false;
     bool m_minimized = false;
     bool m_maximized = false;
@@ -83,4 +94,20 @@ private:
 
     D3D12_VIEWPORT m_viewport    = {};
     D3D12_RECT     m_scissorRect = {};
+
+
+
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pso;
+
+    POINT m_mousePosition = {};
+
+    // Camera
+    float m_theta  = 1.5f * DirectX::XM_PI;
+    float m_phi    = DirectX::XM_PIDIV4;
+    float m_radius = 5.f;
+
+    // Coordinate System
+    DirectX::XMFLOAT4X4 m_world = createIdentity4x4();
+    DirectX::XMFLOAT4X4 m_view  = createIdentity4x4();
+    DirectX::XMFLOAT4X4 m_proj  = createIdentity4x4();
 };
