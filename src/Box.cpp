@@ -105,26 +105,58 @@ Box::Box()
     m_inputLayout =
     {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT,    0, 0,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        {"COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        // {"COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        {"COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
     };
 
     // ----------------------
     //  Vertices and Indices
     // ----------------------
 
-    const std::array<Vertex, 8> vertices =
+    std::array<VPosData, 11> verticesPos =
     {
-        Vertex({ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT4(Colors::White) }),
-		Vertex({ XMFLOAT3(-1.0f, +1.0f, -1.0f), XMFLOAT4(Colors::Black) }),
-		Vertex({ XMFLOAT3(+1.0f, +1.0f, -1.0f), XMFLOAT4(Colors::Red) }),
-		Vertex({ XMFLOAT3(+1.0f, -1.0f, -1.0f), XMFLOAT4(Colors::Green) }),
-		Vertex({ XMFLOAT3(-1.0f, -1.0f, +1.0f), XMFLOAT4(Colors::Blue) }),
-		Vertex({ XMFLOAT3(-1.0f, +1.0f, +1.0f), XMFLOAT4(Colors::Yellow) }),
-		Vertex({ XMFLOAT3(+1.0f, +1.0f, +1.0f), XMFLOAT4(Colors::Cyan) }),
-		Vertex({ XMFLOAT3(+1.0f, -1.0f, +1.0f), XMFLOAT4(Colors::Magenta) })
+        // Box
+        VPosData(XMFLOAT3(-1.0f, -1.0f, -1.0f)),
+	    VPosData(XMFLOAT3(-1.0f, +1.0f, -1.0f)),
+	    VPosData(XMFLOAT3(+1.0f, +1.0f, -1.0f)),
+	    VPosData(XMFLOAT3(+1.0f, -1.0f, -1.0f)),
+	    VPosData(XMFLOAT3(-1.0f, -1.0f, +1.0f)),
+	    VPosData(XMFLOAT3(-1.0f, +1.0f, +1.0f)),
+	    VPosData(XMFLOAT3(+1.0f, +1.0f, +1.0f)),
+	    VPosData(XMFLOAT3(+1.0f, -1.0f, +1.0f)),
+
+        // Point 
+        VPosData(XMFLOAT3(-0.5f, +0.0f, -1.1f)),
+        VPosData(XMFLOAT3(+0.0f, +0.7f, -1.1f)),
+        VPosData(XMFLOAT3(+0.5f, +0.8f, -1.1f)),
     };
 
-    const std::array<std::uint16_t, 36> indices =
+    // Move cube left 2 units
+    // auto moveleft2 = XMMatrixTranslation(-2.f, 0.f, 0.f);
+    // for (int i = 0; i < 8; ++i)
+    // {
+    //     auto pos = XMLoadFloat3(&verticesPos[i].pos);
+    //     pos = XMVector3Transform(pos, moveleft2);
+    //     XMStoreFloat3(&verticesPos[i].pos, pos);
+    // }
+
+
+    const std::array<VColorData, 11> verticesColor =
+    {
+        VColorData(XMFLOAT4(Colors::White)),
+		VColorData(XMFLOAT4(Colors::Black)),
+		VColorData(XMFLOAT4(Colors::Red)),
+		VColorData(XMFLOAT4(Colors::Green)),
+		VColorData(XMFLOAT4(Colors::Blue)),
+		VColorData(XMFLOAT4(Colors::Yellow)),
+		VColorData(XMFLOAT4(Colors::Cyan)),
+		VColorData(XMFLOAT4(Colors::Magenta)),
+		VColorData(XMFLOAT4(Colors::Red)),
+		VColorData(XMFLOAT4(Colors::Green)),
+		VColorData(XMFLOAT4(Colors::Blue)),
+    };
+
+    const std::array<std::uint16_t, 39> indices =
     {
     	// front face
     	0, 1, 2,
@@ -148,24 +180,34 @@ Box::Box()
 
     	// bottom face
     	4, 0, 3,
-    	4, 3, 7
+    	4, 3, 7,
+
+        // Point
+        8, 9, 10
     };
 
-    constexpr auto verticesSize = vertices.size() * sizeof(Vertex);
+    // constexpr auto verticesSize = vertices.size() * sizeof(Vertex);
+    constexpr auto vPosSize = verticesPos.size() * sizeof(VPosData);
+    constexpr auto vColorSize = verticesColor.size() * sizeof(VColorData);
     constexpr auto indicesSize = indices.size() * sizeof(int16_t);
 
-    ThrowIfFailed(D3DCreateBlob(verticesSize, m_vertexBufferData.GetAddressOf()));
-    memcpy(m_vertexBufferData->GetBufferPointer(), vertices.data(), verticesSize);
+    ThrowIfFailed(D3DCreateBlob(vPosSize, m_vertexPosBufferData.GetAddressOf()));
+    memcpy(m_vertexPosBufferData->GetBufferPointer(), verticesPos.data(), vPosSize);
+    ThrowIfFailed(D3DCreateBlob(vColorSize, m_vertexColorBufferData.GetAddressOf()));
+    memcpy(m_vertexColorBufferData->GetBufferPointer(), verticesColor.data(), vColorSize);
     ThrowIfFailed(D3DCreateBlob(indicesSize, m_indexBufferData.GetAddressOf()));
     memcpy(m_indexBufferData->GetBufferPointer(), indices.data(), indicesSize);
 
 
     // Create default buffer
-    m_vertexBufferGPU = createDefaultBuffer(m_device.Get(), m_commandList.Get(), vertices.data(), verticesSize, m_vertexBufferCPU);
+    m_vertexPosBufferGPU = createDefaultBuffer(m_device.Get(), m_commandList.Get(), verticesPos.data(), vPosSize, m_vertexPosBufferCPU);
+    m_vertexColorBufferGPU = createDefaultBuffer(m_device.Get(), m_commandList.Get(), verticesColor.data(), vColorSize, m_vertexColorBufferCPU);
     m_indexBufferGPU  = createDefaultBuffer(m_device.Get(), m_commandList.Get(), indices.data(), indicesSize, m_indexBufferCPU);
 
-    m_vertexStride     = sizeof(Vertex);
-    m_vertexBufferSize = verticesSize;
+    m_vertexPosStride     = sizeof(VPosData);
+    m_vertexPosBufferSize = vPosSize;
+    m_vertexColorStride     = sizeof(VColorData);
+    m_vertexColorBufferSize = vColorSize;
     m_indexFormat      = DXGI_FORMAT_R16_UINT;
     m_indexBufferSize  = indicesSize;
 
@@ -244,10 +286,14 @@ void Box::draw()
     m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
 
     D3D12_VERTEX_BUFFER_VIEW vertexView = {};
-    vertexView.BufferLocation = m_vertexBufferGPU->GetGPUVirtualAddress();
-    vertexView.StrideInBytes  = m_vertexStride;
-    vertexView.SizeInBytes    = m_vertexBufferSize;
+    vertexView.BufferLocation = m_vertexPosBufferGPU->GetGPUVirtualAddress();
+    vertexView.StrideInBytes  = m_vertexPosStride;
+    vertexView.SizeInBytes    = m_vertexPosBufferSize;
     m_commandList->IASetVertexBuffers(0, 1, &vertexView);
+    vertexView.BufferLocation = m_vertexColorBufferGPU->GetGPUVirtualAddress();
+    vertexView.StrideInBytes  = m_vertexColorStride;
+    vertexView.SizeInBytes    = m_vertexColorBufferSize;
+    m_commandList->IASetVertexBuffers(1, 1, &vertexView);
 
     D3D12_INDEX_BUFFER_VIEW indexView = {};
     indexView.BufferLocation = m_indexBufferGPU->GetGPUVirtualAddress();
@@ -259,7 +305,8 @@ void Box::draw()
 
     m_commandList->SetGraphicsRootDescriptorTable(0, m_cbvHeap->GetGPUDescriptorHandleForHeapStart());
 
-    m_commandList->DrawIndexedInstanced(m_indexCount, 1, 0, 0, 0);
+    m_commandList->DrawIndexedInstanced(39, 1, 0, 0, 0);
+    // m_commandList->DrawIndexedInstanced(3, 1, 36, 0, 0);
 }
 
 void Box::onResize()

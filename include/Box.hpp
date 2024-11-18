@@ -4,9 +4,17 @@
 
 #include <vector>
 
-struct Vertex
+// struct Vertex
+// {
+//     DirectX::XMFLOAT3 position;
+//     DirectX::XMFLOAT4 color;
+// };
+struct VPosData
 {
-    DirectX::XMFLOAT3 position;
+    DirectX::XMFLOAT3 pos;
+};
+struct VColorData
+{
     DirectX::XMFLOAT4 color;
 };
 
@@ -37,15 +45,20 @@ private:
     Microsoft::WRL::ComPtr<ID3DBlob> m_ps;
     std::vector<D3D12_INPUT_ELEMENT_DESC> m_inputLayout;
 
-    Microsoft::WRL::ComPtr<ID3DBlob> m_vertexBufferData;
+    Microsoft::WRL::ComPtr<ID3DBlob> m_vertexPosBufferData;
+    Microsoft::WRL::ComPtr<ID3DBlob> m_vertexColorBufferData;
     Microsoft::WRL::ComPtr<ID3DBlob> m_indexBufferData;
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_vertexBufferGPU;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_vertexPosBufferGPU;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_vertexColorBufferGPU;
     Microsoft::WRL::ComPtr<ID3D12Resource> m_indexBufferGPU;
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_vertexBufferCPU;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_vertexPosBufferCPU;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_vertexColorBufferCPU;
     Microsoft::WRL::ComPtr<ID3D12Resource> m_indexBufferCPU;
 
-    int         m_vertexStride     = 0;
-    int         m_vertexBufferSize = 0;
+    int         m_vertexPosStride     = 0;
+    int         m_vertexPosBufferSize = 0;
+    int         m_vertexColorStride     = 0;
+    int         m_vertexColorBufferSize = 0;
     DXGI_FORMAT m_indexFormat      = DXGI_FORMAT_R16_UINT;
     int         m_indexBufferSize  = 0;
 
