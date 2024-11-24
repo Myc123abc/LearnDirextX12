@@ -364,6 +364,14 @@ void DirectX12::drawBegin()
     // Reset viewport and scissor rectangle
     // These need to be reset when the command list is reset
     m_commandList->RSSetViewports(1, &m_viewport);
+
+    POINT center = { m_width / 2, m_height / 2 };
+    auto width = m_width / 2;
+    auto height = m_height / 2;
+    m_scissorRect.left = center.x - width / 2;
+    m_scissorRect.right = center.x + width / 2;
+    m_scissorRect.bottom = center.y + height / 2;
+    m_scissorRect.top = center.y - height / 2;
     m_commandList->RSSetScissorRects(1, &m_scissorRect);
 
     // Convert back buffer state from present to render target
@@ -473,7 +481,8 @@ void DirectX12::onResize()
     // Reset viewport and scissor rectangle
     m_viewport.Width  = static_cast<float>(m_width);
     m_viewport.Height = static_cast<float>(m_height);
-    m_scissorRect = { 0, 0, m_width, m_height };
+
+    m_scissorRect = { 0, 0, m_width, m_height};
 }
 
 void DirectX12::flushCommandQueue()

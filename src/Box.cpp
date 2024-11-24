@@ -8,6 +8,7 @@
 using namespace Microsoft::WRL;
 using namespace DirectX::Colors;
 using namespace DirectX;
+using namespace PackedVector;
 
 Box::Box()
 {
@@ -104,18 +105,41 @@ Box::Box()
 
     m_inputLayout =
     {
+        {"COLOR",    0, DXGI_FORMAT_B8G8R8A8_UNORM, 1, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT,    0, 0,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
         // {"COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        {"COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        // {"COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
     };
 
     // ----------------------
     //  Vertices and Indices
     // ----------------------
 
-    std::array<VPosData, 11> verticesPos =
+    // std::vector<Vertex> vertices = 
+    // {
+    //     {{ 0.0f,  0.5f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}}, // Top
+    //     {{ 0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}}, // Right
+    //     {{-0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f, 1.0f}}, // Left
+    //     {{ 0.5f, -1.0f, 0.0f}, {1.0f, 1.0f, 0.0f, 1.0f}}  // Bottom
+    // };
+    
+
+    std::array<VPosData, 14> verticesPos =
     {
         // Box
+	    // VPosData(XMFLOAT3(.0f, .5f, .0f)),
+	    // VPosData(XMFLOAT3(.5f, -0.5f, .0f)),
+	    // VPosData(XMFLOAT3(-.5f, -0.5f, .0f)),
+	    // VPosData(XMFLOAT3(.5f, 1.f, .0f)),
+
+        // VPosData(XMFLOAT3(-0.0f, +1.0f, +0.0f)),
+        // VPosData(XMFLOAT3(-1.0f, +0.0f, -1.0f)),
+        // VPosData(XMFLOAT3(+1.0f, +0.0f, -1.0f)),
+        // VPosData(XMFLOAT3(+1.0f, +0.0f, +1.0f)),
+        // VPosData(XMFLOAT3(-1.0f, +0.0f, +1.0f)),
+
+        // VPosData(XMFLOAT3(-1.0f, +0.0f, -1.0f)),
+
         VPosData(XMFLOAT3(-1.0f, -1.0f, -1.0f)),
 	    VPosData(XMFLOAT3(-1.0f, +1.0f, -1.0f)),
 	    VPosData(XMFLOAT3(+1.0f, +1.0f, -1.0f)),
@@ -129,7 +153,14 @@ Box::Box()
         VPosData(XMFLOAT3(-0.5f, +0.0f, -1.1f)),
         VPosData(XMFLOAT3(+0.0f, +0.7f, -1.1f)),
         VPosData(XMFLOAT3(+0.5f, +0.8f, -1.1f)),
+        VPosData(XMFLOAT3(+0.5f, +1.2f, -0.5f)),
+        VPosData(XMFLOAT3(+0.f, +.5f, -0.0f)),
+
+        // Pyramid
+        VPosData(XMFLOAT3(0.f, 1.f, 0.f))
     };
+
+    
 
     // Move cube left 2 units
     // auto moveleft2 = XMMatrixTranslation(-2.f, 0.f, 0.f);
@@ -141,22 +172,37 @@ Box::Box()
     // }
 
 
-    const std::array<VColorData, 11> verticesColor =
+    const std::array<VColorData, 17> verticesColor =
     {
-        VColorData(XMFLOAT4(Colors::White)),
-		VColorData(XMFLOAT4(Colors::Black)),
-		VColorData(XMFLOAT4(Colors::Red)),
-		VColorData(XMFLOAT4(Colors::Green)),
-		VColorData(XMFLOAT4(Colors::Blue)),
-		VColorData(XMFLOAT4(Colors::Yellow)),
-		VColorData(XMFLOAT4(Colors::Cyan)),
-		VColorData(XMFLOAT4(Colors::Magenta)),
-		VColorData(XMFLOAT4(Colors::Red)),
-		VColorData(XMFLOAT4(Colors::Green)),
-		VColorData(XMFLOAT4(Colors::Blue)),
+        VColorData(XMCOLOR(0, 0, 0, 255)),
+        VColorData(XMCOLOR(255, 0, 0, 255)),
+        VColorData(XMCOLOR(0, 255, 0, 255)),
+        VColorData(XMCOLOR(0, 0, 255, 255)),
+        VColorData(XMCOLOR(255, 255, 0, 255)),
+        VColorData(XMCOLOR(255, 0, 255, 255)),
+        VColorData(XMCOLOR(0, 255, 255, 255)),
+        VColorData(XMCOLOR(255, 255, 255, 255)),
+		// VColorData(XMFLOAT4(Colors::Red)),
+		// VColorData(XMFLOAT4(Colors::Green)),
+		// VColorData(XMFLOAT4(Colors::Blue)),
+		// VColorData(XMFLOAT4(Colors::Yellow)),
+		// VColorData(XMFLOAT4(Colors::Green)),
+		// VColorData(XMFLOAT4(Colors::Cyan)),
+		// VColorData(XMFLOAT4(Colors::Green)),
+		// VColorData(XMFLOAT4(Colors::Black)),
+		// VColorData(XMFLOAT4(Colors::Green)),
+		// VColorData(XMFLOAT4(Colors::Green)),
+		// VColorData(XMFLOAT4(Colors::Green)),
+		// VColorData(XMFLOAT4(Colors::Green)),
+		// VColorData(XMFLOAT4(Colors::Red)),
+
+		// VColorData(XMFLOAT4(Colors::Black)),
+		// VColorData(XMFLOAT4(Colors::Black)),
+		// VColorData(XMFLOAT4(Colors::Black)),
+		// VColorData(XMFLOAT4(Colors::Black)),
     };
 
-    const std::array<std::uint16_t, 39> indices =
+    const std::array<std::uint16_t, 61> indices =
     {
     	// front face
     	0, 1, 2,
@@ -178,18 +224,25 @@ Box::Box()
     	1, 5, 6,
     	1, 6, 2,
 
-    	// bottom face
+    	// bottom face for pyramid and box
     	4, 0, 3,
     	4, 3, 7,
 
+        // top of pyramid
+        13, 0, 4,
+        13, 3, 0,
+        13, 7, 3,
+        13, 4, 7,
+
+
         // Point
-        8, 9, 10
+        8, 9, 10, 11,
     };
 
-    // constexpr auto verticesSize = vertices.size() * sizeof(Vertex);
     constexpr auto vPosSize = verticesPos.size() * sizeof(VPosData);
     constexpr auto vColorSize = verticesColor.size() * sizeof(VColorData);
     constexpr auto indicesSize = indices.size() * sizeof(int16_t);
+    // auto vSize = vertices.size() * sizeof(Vertex);
 
     ThrowIfFailed(D3DCreateBlob(vPosSize, m_vertexPosBufferData.GetAddressOf()));
     memcpy(m_vertexPosBufferData->GetBufferPointer(), verticesPos.data(), vPosSize);
@@ -197,12 +250,15 @@ Box::Box()
     memcpy(m_vertexColorBufferData->GetBufferPointer(), verticesColor.data(), vColorSize);
     ThrowIfFailed(D3DCreateBlob(indicesSize, m_indexBufferData.GetAddressOf()));
     memcpy(m_indexBufferData->GetBufferPointer(), indices.data(), indicesSize);
+    // ThrowIfFailed(D3DCreateBlob(vSize, m_vertexBufferData.GetAddressOf()));
+    // memcpy(m_vertexBufferData->GetBufferPointer(), vertices.data(), vSize);
 
 
     // Create default buffer
     m_vertexPosBufferGPU = createDefaultBuffer(m_device.Get(), m_commandList.Get(), verticesPos.data(), vPosSize, m_vertexPosBufferCPU);
     m_vertexColorBufferGPU = createDefaultBuffer(m_device.Get(), m_commandList.Get(), verticesColor.data(), vColorSize, m_vertexColorBufferCPU);
     m_indexBufferGPU  = createDefaultBuffer(m_device.Get(), m_commandList.Get(), indices.data(), indicesSize, m_indexBufferCPU);
+    // m_vertexBufferGPU = createDefaultBuffer(m_device.Get(), m_commandList.Get(), vertices.data(), vSize, m_vertexBufferCPU);
 
     m_vertexPosStride     = sizeof(VPosData);
     m_vertexPosBufferSize = vPosSize;
@@ -210,6 +266,8 @@ Box::Box()
     m_vertexColorBufferSize = vColorSize;
     m_indexFormat      = DXGI_FORMAT_R16_UINT;
     m_indexBufferSize  = indicesSize;
+    // m_vertexStride = sizeof(Vertex);
+    // m_vertexBufferSize = vSize;
 
     m_indexCount = static_cast<int>(indices.size());
     m_startIndexLocation = 0;
@@ -234,6 +292,8 @@ Box::Box()
         m_ps->GetBufferSize()
     };
     psoDesc.RasterizerState       = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_FRONT;
     psoDesc.BlendState            = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
     psoDesc.DepthStencilState     = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
     psoDesc.SampleMask            = UINT_MAX;
@@ -256,12 +316,12 @@ Box::~Box()
     m_constBuffer->Unmap(0, nullptr);
 }
 
-void Box::update()
+void Box::translation(float xx, float yy, float zz)
 {
     float x = m_radius * sinf(m_phi) * cosf(m_theta);
     float z = m_radius * sinf(m_phi) * sinf(m_theta);
     float y = m_radius * cosf(m_phi);
-
+    
     auto pos = XMVectorSet(x, y, z, 1.f);
     auto target = XMVectorZero();
     auto up = XMVectorSet(0.f, 1.f, 0.f, 0.f);
@@ -270,12 +330,40 @@ void Box::update()
     XMStoreFloat4x4(&m_view, view);
 
     auto world = XMLoadFloat4x4(&m_world);
+
+    world *= XMMatrixTranslation(xx, yy, zz);
+
     auto proj = XMLoadFloat4x4(&m_proj);
     auto worldViewProj = world * view * proj;
 
     ObjectConstant objectConstant;
     XMStoreFloat4x4(&objectConstant.worldViewProj, XMMatrixTranspose(worldViewProj));
+    objectConstant.time = m_timer.getTime();
+    objectConstant.color = XMFLOAT4(Colors::Orange); 
     memcpy(m_mappedData, &objectConstant, sizeof(ObjectConstant));
+}
+
+void Box::update()
+{
+    // float x = m_radius * sinf(m_phi) * cosf(m_theta);
+    // float z = m_radius * sinf(m_phi) * sinf(m_theta);
+    // float y = m_radius * cosf(m_phi);
+
+    // auto pos = XMVectorSet(x, y, z, 1.f);
+    // auto target = XMVectorZero();
+    // auto up = XMVectorSet(0.f, 1.f, 0.f, 0.f);
+    
+    // auto view = XMMatrixLookAtLH(pos, target, up);
+    // XMStoreFloat4x4(&m_view, view);
+
+    // auto world = XMLoadFloat4x4(&m_world);
+    // auto proj = XMLoadFloat4x4(&m_proj);
+    // auto worldViewProj = world * view * proj;
+
+    // ObjectConstant objectConstant;
+    // XMStoreFloat4x4(&objectConstant.worldViewProj, XMMatrixTranspose(worldViewProj));
+    // objectConstant.time = m_timer.getTime();
+    // memcpy(m_mappedData, &objectConstant, sizeof(ObjectConstant));
 }
 
 void Box::draw()
@@ -289,6 +377,9 @@ void Box::draw()
     vertexView.BufferLocation = m_vertexPosBufferGPU->GetGPUVirtualAddress();
     vertexView.StrideInBytes  = m_vertexPosStride;
     vertexView.SizeInBytes    = m_vertexPosBufferSize;
+    // vertexView.BufferLocation = m_vertexBufferGPU->GetGPUVirtualAddress();
+    // vertexView.StrideInBytes  = m_vertexStride;
+    // vertexView.SizeInBytes    = m_vertexBufferSize;
     m_commandList->IASetVertexBuffers(0, 1, &vertexView);
     vertexView.BufferLocation = m_vertexColorBufferGPU->GetGPUVirtualAddress();
     vertexView.StrideInBytes  = m_vertexColorStride;
@@ -301,12 +392,23 @@ void Box::draw()
     indexView.SizeInBytes    = m_indexBufferSize;
     m_commandList->IASetIndexBuffer(&indexView);
 
-    m_commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
     m_commandList->SetGraphicsRootDescriptorTable(0, m_cbvHeap->GetGPUDescriptorHandleForHeapStart());
 
-    m_commandList->DrawIndexedInstanced(39, 1, 0, 0, 0);
-    // m_commandList->DrawIndexedInstanced(3, 1, 36, 0, 0);
+    // m_commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    // m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+    // m_commandList->DrawIndexedInstanced(3, 1, 0, 0, 0);
+    // m_commandList->DrawInstanced(4, 1, 0, 0);
+
+    // m_commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_POINTLIST);
+    // m_commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+    // m_commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINESTRIP);
+    // m_commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+    m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+    translation(-1.f, 0.f, 0.f);
+    m_commandList->DrawIndexedInstanced(36, 1, 0, 0, 0);
+    translation(+0.f, 0.f, 0.f);
+    m_commandList->DrawIndexedInstanced(18, 1, 30, 0, 0);
 }
 
 void Box::onResize()
