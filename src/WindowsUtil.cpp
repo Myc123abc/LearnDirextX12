@@ -1,16 +1,17 @@
-#include "Util.hpp"
+#include "WindowsUtil.hpp"
+
 #include <crtdbg.h>
 
-using namespace Util;
+using namespace Win;
 
-void Util::enableMemCheck()
+void Win::enableMemCheck()
 {
 #if defined(DEBUG) | defined (_DEBUG)
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 #endif
 }
 
-HWND Util::createWindow(WindowConfig& config) noexcept
+HWND Win::createWindow(WindowConfig& config) noexcept
 {
     if (config.hInstance == nullptr)
     {
@@ -44,7 +45,7 @@ HWND Util::createWindow(WindowConfig& config) noexcept
                            config.hWndParent, config.hMenu, config.hInstance, config.userData);
 }
 
-bool Util::showWindow(const HWND hWnd) noexcept
+bool Win::showWindow(const HWND hWnd) noexcept
 {
     ShowWindow(hWnd, SW_SHOW);
     return UpdateWindow(hWnd);

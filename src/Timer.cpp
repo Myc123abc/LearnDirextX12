@@ -1,5 +1,4 @@
 #include "Timer.hpp"
-#include <Windows.h>
 
 using namespace GalgameEngine;
 

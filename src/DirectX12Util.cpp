@@ -1,12 +1,9 @@
-#include "DirectX12Util.hpp"
-
-#include <d3dx12.h>
-
 #include <fstream>
 
 using namespace Microsoft::WRL;
+using namespace DX;
 
-ComPtr<ID3DBlob> loadBinaryFile(const std::wstring& filename)
+ComPtr<ID3DBlob> DX::loadBinaryFile(const std::wstring& filename)
 {
     std::ifstream ifile(filename, std::ios::binary);
 
@@ -23,7 +20,7 @@ ComPtr<ID3DBlob> loadBinaryFile(const std::wstring& filename)
     return blob;
 }
 
-Microsoft::WRL::ComPtr<ID3D12Resource> createDefaultBuffer(
+Microsoft::WRL::ComPtr<ID3D12Resource> DX::createDefaultBuffer(
     ID3D12Device* device,
     ID3D12GraphicsCommandList* cmdList,
     const void* data,

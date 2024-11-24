@@ -1,8 +1,6 @@
 #pragma once
 
-#include <Windows.h>
-
-namespace Util
+namespace Win
 {
     // Use windows memory check
     void enableMemCheck();

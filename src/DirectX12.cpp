@@ -1,15 +1,15 @@
 #include "DirectX12.hpp"
-#include "Util.hpp"
+#include "WindowsUtil.hpp"
 
 #include <string>
 #include <format>
-#include <algorithm>
 #include <numbers>
 
 #include <assert.h>
 
 using namespace Microsoft::WRL;
-using namespace Util;
+using namespace Win;
+using namespace DX;
 
 
 LRESULT CALLBACK wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -136,6 +136,8 @@ DirectX12::DirectX12()
     s_pThis = this;
 
     enableMemCheck();
+
+    ThrowIfFalse(DirectX::XMVerifyCPUSupport());
 
     // ---------------
     //  Create window

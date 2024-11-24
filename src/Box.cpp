@@ -9,6 +9,7 @@ using namespace Microsoft::WRL;
 using namespace DirectX::Colors;
 using namespace DirectX;
 using namespace PackedVector;
+using namespace DX;
 
 Box::Box()
 {

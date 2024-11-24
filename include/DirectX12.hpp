@@ -1,11 +1,6 @@
 #pragma once
 
 #include "Timer.hpp"
-#include "DirectX12Util.hpp"
-
-#include <wrl.h>
-#include <d3d12.h>
-#include <dxgi1_4.h>
 
 class DirectX12
 {
@@ -107,7 +102,7 @@ protected:
     float m_radius = 5.f;
 
     // Coordinate System
-    DirectX::XMFLOAT4X4 m_world = createIdentity4x4();
-    DirectX::XMFLOAT4X4 m_view  = createIdentity4x4();
-    DirectX::XMFLOAT4X4 m_proj  = createIdentity4x4();
+    DirectX::XMFLOAT4X4 m_world = DX::createIdentity4x4();
+    DirectX::XMFLOAT4X4 m_view  = DX::createIdentity4x4();
+    DirectX::XMFLOAT4X4 m_proj  = DX::createIdentity4x4();
 };

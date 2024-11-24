@@ -23,7 +23,7 @@ struct VColorData
 struct ObjectConstant
 {
     // 0 ~ 63
-    DirectX::XMFLOAT4X4 worldViewProj = createIdentity4x4();
+    DirectX::XMFLOAT4X4 worldViewProj = DX::createIdentity4x4();
     // 64 ~ 73
     uint32_t matIndex = 0;
     float time = 0.f;
