@@ -23,6 +23,8 @@ LRESULT CALLBACK wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_KEYUP:
         if (wParam == VK_ESCAPE)
             PostQuitMessage(0);
+        else
+            break;
         return 0;
     
     case WM_GETMINMAXINFO:
@@ -41,6 +43,14 @@ LRESULT DirectX12::wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 { 
     switch (msg)
     {
+    case WM_KEYUP:
+        if (wParam == 'm' || wParam == 'M')
+        {
+            m_useMSAA = !m_useMSAA;
+            createPipeline();
+        }
+        return 0;
+
     case WM_ACTIVATE:
         if (LOWORD(wParam) == WA_INACTIVE)
         {
@@ -428,6 +438,76 @@ DirectX12::DirectX12()
 
     m_scissorRect.right  = m_width;
     m_scissorRect.bottom = m_height;
+
+
+    // -----------------------
+    //  Create root signature
+    // -----------------------
+
+    D3D12_DESCRIPTOR_RANGE cbvTable = {};
+    cbvTable.RangeType      = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
+    cbvTable.NumDescriptors = 1;
+    cbvTable.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    D3D12_ROOT_PARAMETER rootParameter[1] = {};
+    rootParameter[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE; 
+    rootParameter[0].DescriptorTable.NumDescriptorRanges = cbvTable.NumDescriptors;
+    rootParameter[0].DescriptorTable.pDescriptorRanges   = &cbvTable;
+    
+    D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc = {};
+    rootSignatureDesc.NumParameters = 1;
+    rootSignatureDesc.pParameters   = rootParameter;
+    rootSignatureDesc.Flags         = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+    ComPtr<ID3DBlob> serializedRootSignature;
+    ComPtr<ID3DBlob> errorBlob;
+    hr = D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1,
+        serializedRootSignature.GetAddressOf(), errorBlob.GetAddressOf());
+    if (errorBlob != nullptr)
+    {
+        OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+    }
+    ThrowIfFailed(hr);
+
+    ThrowIfFailed(m_device->CreateRootSignature(
+        0, 
+        serializedRootSignature->GetBufferPointer(),
+        serializedRootSignature->GetBufferSize(),
+        IID_PPV_ARGS(m_rootSignature.GetAddressOf())
+    ));
+}
+
+void DirectX12::createPipeline()
+{
+    if (!m_vs || !m_ps || m_inputLayout.empty())
+        throw std::runtime_error("Set shaders and input layout before craeting pipeline!");
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+    psoDesc.InputLayout    = { m_inputLayout.data(), static_cast<UINT>(m_inputLayout.size()) };
+    psoDesc.pRootSignature = m_rootSignature.Get();
+    psoDesc.VS = 
+    {
+        reinterpret_cast<BYTE*>(m_vs->GetBufferPointer()),
+        m_vs->GetBufferSize()
+    };
+    psoDesc.PS =
+    {
+        reinterpret_cast<BYTE*>(m_ps->GetBufferPointer()),
+        m_ps->GetBufferSize()
+    };
+    psoDesc.RasterizerState       = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    // psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+    // psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_FRONT;
+    psoDesc.BlendState            = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    psoDesc.DepthStencilState     = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    psoDesc.SampleMask            = UINT_MAX;
+    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    psoDesc.NumRenderTargets      = 1;
+    psoDesc.RTVFormats[0]         = m_backBufferFormat;
+    psoDesc.SampleDesc.Count      = m_useMSAA ? m_sampleCount : 1;
+    psoDesc.SampleDesc.Quality    = m_4xMSAAQualityLevels;
+    psoDesc.DSVFormat             = m_depthBufferFormat;
+    ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_pso.ReleaseAndGetAddressOf())));
 }
 
 void DirectX12::run()

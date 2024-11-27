@@ -34,6 +34,11 @@ protected:
     virtual void onMouseMove(WPARAM btnState, int x, int y);
     virtual void onMouseWheel(WPARAM wParam);
 
+    inline void setVS(PCWSTR path) { m_vs = DX::loadBinaryFile(path); }
+    inline void setPS(PCWSTR path) { m_ps = DX::loadBinaryFile(path); }
+    // Must set vs, ps, and input layout before creating pipeline
+    void createPipeline();
+
 private:
     void drawBegin();
     void drawEnd();
@@ -115,4 +120,9 @@ protected:
     DirectX::XMFLOAT4X4 m_world = DX::createIdentity4x4();
     DirectX::XMFLOAT4X4 m_view  = DX::createIdentity4x4();
     DirectX::XMFLOAT4X4 m_proj  = DX::createIdentity4x4();
+
+    Microsoft::WRL::ComPtr<ID3D12RootSignature>  m_rootSignature;
+    Microsoft::WRL::ComPtr<ID3DBlob> m_vs;
+    Microsoft::WRL::ComPtr<ID3DBlob> m_ps;
+    std::vector<D3D12_INPUT_ELEMENT_DESC> m_inputLayout;
 };

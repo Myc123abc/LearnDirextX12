@@ -60,49 +60,12 @@ Box::Box()
     m_device->CreateConstantBufferView(&cbvDesc, m_cbvHeap->GetCPUDescriptorHandleForHeapStart());
 
 
-    // --------------------
-    //  Set root signature
-    // --------------------
-    
-    D3D12_DESCRIPTOR_RANGE cbvTable = {};
-    cbvTable.RangeType      = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
-    cbvTable.NumDescriptors = 1;
-    cbvTable.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
-    D3D12_ROOT_PARAMETER rootParameter[1] = {};
-    rootParameter[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE; 
-    rootParameter[0].DescriptorTable.NumDescriptorRanges = cbvTable.NumDescriptors;
-    rootParameter[0].DescriptorTable.pDescriptorRanges   = &cbvTable;
-    
-    D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc = {};
-    rootSignatureDesc.NumParameters = 1;
-    rootSignatureDesc.pParameters   = rootParameter;
-    rootSignatureDesc.Flags         = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-
-    ComPtr<ID3DBlob> serializedRootSignature;
-    ComPtr<ID3DBlob> errorBlob;
-    auto hr = D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1,
-        serializedRootSignature.GetAddressOf(), errorBlob.GetAddressOf());
-    if (errorBlob != nullptr)
-    {
-        OutputDebugStringA((char*)errorBlob->GetBufferPointer());
-    }
-    ThrowIfFailed(hr);
-
-    ThrowIfFailed(m_device->CreateRootSignature(
-        0, 
-        serializedRootSignature->GetBufferPointer(),
-        serializedRootSignature->GetBufferSize(),
-        IID_PPV_ARGS(m_rootSignature.GetAddressOf())
-    ));
-
-
     // --------
     //  Layout
     // --------
 
-    m_vs = loadBinaryFile(L"../shader/box_vs.cso");
-    m_ps = loadBinaryFile(L"../shader/box_ps.cso");
+    setVS(L"../shader/box_vs.cso");
+    setPS(L"../shader/box_ps.cso");
 
     m_inputLayout =
     {
@@ -111,6 +74,8 @@ Box::Box()
         // {"COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
         // {"COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
     };
+
+    createPipeline();
 
     // ----------------------
     //  Vertices and Indices
@@ -273,38 +238,6 @@ Box::Box()
     m_indexCount = static_cast<int>(indices.size());
     m_startIndexLocation = 0;
     m_baseVertexLocation = 0;
-
-
-    // -----------------------
-    //  Create Pipeline state
-    // -----------------------
-
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-    psoDesc.InputLayout    = { m_inputLayout.data(), static_cast<UINT>(m_inputLayout.size()) };
-    psoDesc.pRootSignature = m_rootSignature.Get();
-    psoDesc.VS = 
-    {
-        reinterpret_cast<BYTE*>(m_vs->GetBufferPointer()),
-        m_vs->GetBufferSize()
-    };
-    psoDesc.PS =
-    {
-        reinterpret_cast<BYTE*>(m_ps->GetBufferPointer()),
-        m_ps->GetBufferSize()
-    };
-    psoDesc.RasterizerState       = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-    // psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
-    // psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_FRONT;
-    psoDesc.BlendState            = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-    psoDesc.DepthStencilState     = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-    psoDesc.SampleMask            = UINT_MAX;
-    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    psoDesc.NumRenderTargets      = 1;
-    psoDesc.RTVFormats[0]         = m_backBufferFormat;
-    psoDesc.SampleDesc.Count      = m_useMSAA ? m_sampleCount : 1;
-    psoDesc.SampleDesc.Quality    = m_4xMSAAQualityLevels;
-    psoDesc.DSVFormat             = m_depthBufferFormat;
-    ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pso)));
 
     // Submit
     ThrowIfFailed(m_commandList->Close());
