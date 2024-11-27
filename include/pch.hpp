@@ -25,7 +25,6 @@
 #include <windows.h>
 
 #include <wrl/client.h>
-// #include <wrl/event.h>
 
 #include <windowsx.h>
 

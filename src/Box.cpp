@@ -293,16 +293,16 @@ Box::Box()
         m_ps->GetBufferSize()
     };
     psoDesc.RasterizerState       = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-    psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
-    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_FRONT;
+    // psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+    // psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_FRONT;
     psoDesc.BlendState            = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
     psoDesc.DepthStencilState     = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
     psoDesc.SampleMask            = UINT_MAX;
     psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     psoDesc.NumRenderTargets      = 1;
     psoDesc.RTVFormats[0]         = m_backBufferFormat;
-    psoDesc.SampleDesc.Count      = 1;
-    psoDesc.SampleDesc.Quality    = 0;
+    psoDesc.SampleDesc.Count      = m_useMSAA ? m_sampleCount : 1;
+    psoDesc.SampleDesc.Quality    = m_4xMSAAQualityLevels;
     psoDesc.DSVFormat             = m_depthBufferFormat;
     ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pso)));
 
@@ -346,25 +346,25 @@ void Box::translation(float xx, float yy, float zz)
 
 void Box::update()
 {
-    // float x = m_radius * sinf(m_phi) * cosf(m_theta);
-    // float z = m_radius * sinf(m_phi) * sinf(m_theta);
-    // float y = m_radius * cosf(m_phi);
+    float x = m_radius * sinf(m_phi) * cosf(m_theta);
+    float z = m_radius * sinf(m_phi) * sinf(m_theta);
+    float y = m_radius * cosf(m_phi);
 
-    // auto pos = XMVectorSet(x, y, z, 1.f);
-    // auto target = XMVectorZero();
-    // auto up = XMVectorSet(0.f, 1.f, 0.f, 0.f);
+    auto pos = XMVectorSet(x, y, z, 1.f);
+    auto target = XMVectorZero();
+    auto up = XMVectorSet(0.f, 1.f, 0.f, 0.f);
     
-    // auto view = XMMatrixLookAtLH(pos, target, up);
-    // XMStoreFloat4x4(&m_view, view);
+    auto view = XMMatrixLookAtLH(pos, target, up);
+    XMStoreFloat4x4(&m_view, view);
 
-    // auto world = XMLoadFloat4x4(&m_world);
-    // auto proj = XMLoadFloat4x4(&m_proj);
-    // auto worldViewProj = world * view * proj;
+    auto world = XMLoadFloat4x4(&m_world);
+    auto proj = XMLoadFloat4x4(&m_proj);
+    auto worldViewProj = world * view * proj;
 
-    // ObjectConstant objectConstant;
-    // XMStoreFloat4x4(&objectConstant.worldViewProj, XMMatrixTranspose(worldViewProj));
-    // objectConstant.time = m_timer.getTime();
-    // memcpy(m_mappedData, &objectConstant, sizeof(ObjectConstant));
+    ObjectConstant objectConstant;
+    XMStoreFloat4x4(&objectConstant.worldViewProj, XMMatrixTranspose(worldViewProj));
+    objectConstant.time = m_timer.getTime();
+    memcpy(m_mappedData, &objectConstant, sizeof(ObjectConstant));
 }
 
 void Box::draw()
@@ -406,9 +406,9 @@ void Box::draw()
     // m_commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
     m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-    translation(-1.f, 0.f, 0.f);
+    // translation(-1.f, 0.f, 0.f);
     m_commandList->DrawIndexedInstanced(36, 1, 0, 0, 0);
-    translation(+0.f, 0.f, 0.f);
+    // translation(+0.f, 0.f, 0.f);
     m_commandList->DrawIndexedInstanced(18, 1, 30, 0, 0);
 }
 

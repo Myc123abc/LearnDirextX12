@@ -160,6 +160,20 @@ DirectX12::DirectX12()
         ComPtr<ID3D12Debug> debugController;
         ThrowIfFailed(D3D12GetDebugInterface(IID_PPV_ARGS(debugController.GetAddressOf())));
         debugController->EnableDebugLayer();
+    
+        ComPtr<IDXGIInfoQueue> dxgiInfoQueue;
+        ThrowIfFailed(DXGIGetDebugInterface1(0, IID_PPV_ARGS(dxgiInfoQueue.GetAddressOf()))); 
+        dxgiInfoQueue->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_ERROR, true);
+        dxgiInfoQueue->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_CORRUPTION, true);
+
+        DXGI_INFO_QUEUE_MESSAGE_ID hide[] =
+        {
+            80  /* IDXGISwapChain::GetContainingOutput: The swapchain's adapter does not control the output on which the swapchain's window resides. */,
+        };
+        DXGI_INFO_QUEUE_FILTER filter = {};
+        filter.DenyList.NumIDs  = _countof(hide);
+        filter.DenyList.pIDList = hide;
+        dxgiInfoQueue->AddStorageFilterEntries(DXGI_DEBUG_DXGI, &filter);
     }
 
     // ----------------------------------
@@ -182,31 +196,39 @@ DirectX12::DirectX12()
         ThrowIfFailed(D3D12CreateDevice(warpAdapter.Get(), D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(m_device.GetAddressOf())));
     }
 
-    // Create fence
-    // CPU use signal to wait GPU has completed word so that CPU can right update resource
-    ThrowIfFailed(m_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(m_fence.GetAddressOf())));
+    // Configure debug device
+#if _DEBUG
+    {
+        ComPtr<ID3D12InfoQueue> infoQueue;
+        ThrowIfFailed(m_device.As(&infoQueue));
+        infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, true);
+        infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, true);
+
+        D3D12_MESSAGE_ID hide[] =
+        {
+            D3D12_MESSAGE_ID_MAP_INVALID_NULLRANGE,
+            D3D12_MESSAGE_ID_UNMAP_INVALID_NULLRANGE,
+            // Workarounds for debug layer issuses on hybrid-graphics systems
+            D3D12_MESSAGE_ID_EXECUTECOMMANDLISTS_WRONGSWAPCHAINBUFFERREFERENCE,
+            D3D12_MESSAGE_ID_RESOURCE_BARRIER_MISMATCHING_COMMAND_LIST_TYPE,
+        };
+        D3D12_INFO_QUEUE_FILTER filter = {};
+        filter.DenyList.NumIDs  = _countof(hide);
+        filter.DenyList.pIDList = hide;
+        infoQueue->AddStorageFilterEntries(&filter);
+    }
+
+#endif
 
     // ------------------------------------------------------
     //  Create command queue, allocator, list and swap chain
     // ------------------------------------------------------
 
-    // Get 4X MSAA quality level
-    // All Direct3D 11 capable devices support 4X MSAA fir all render target formats
-    // So we only need to check quality support
-    D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS level = {};
-    level.Format      = m_backBufferFormat;
-    level.SampleCount = 4;
-    ThrowIfFailed(m_device->CheckFeatureSupport(
-        D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS, 
-        &level,
-        sizeof(level)
-    ));
-    m_4xMSAAQualityLevels = level.NumQualityLevels;
-
     // Create command queue, allocator and list
     auto commandQueueDesc = D3D12_COMMAND_QUEUE_DESC();
     ThrowIfFailed(m_device->CreateCommandQueue(&commandQueueDesc, IID_PPV_ARGS(m_commandQueue.GetAddressOf())));
-    ThrowIfFailed(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(m_commandAllocator.GetAddressOf())));
+    for (int i = 0; i < m_backBufferCount; ++i)
+        ThrowIfFailed(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(m_commandAllocator.GetAddressOf())));
     ThrowIfFailed(m_device->CreateCommandList(
         0, 
         D3D12_COMMAND_LIST_TYPE_DIRECT, 
@@ -218,6 +240,10 @@ DirectX12::DirectX12()
     // We always need reset the command list before rendering new frame
     m_commandList->Close();
 
+    // Create fence
+    // CPU use signal to wait GPU has completed word so that CPU can right update resource
+    ThrowIfFailed(m_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(m_fence.GetAddressOf())));
+
     // Create swap chain
     // Creating swap chain also creates back buffer resource, so there's not need to create back buffer resource manually.
     DXGI_SWAP_CHAIN_DESC swapChainDesc = {};
@@ -226,7 +252,7 @@ DirectX12::DirectX12()
     swapChainDesc.BufferDesc.Format = m_backBufferFormat;
     swapChainDesc.SampleDesc.Count  = 1;
     swapChainDesc.BufferUsage       = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    swapChainDesc.BufferCount       = 2;
+    swapChainDesc.BufferCount       = m_backBufferCount;
     swapChainDesc.OutputWindow      = m_hWnd;
     swapChainDesc.Windowed          = true;
     swapChainDesc.SwapEffect        = DXGI_SWAP_EFFECT_FLIP_DISCARD;
@@ -306,6 +332,92 @@ DirectX12::DirectX12()
     dsvDesc.Format        = m_depthBufferFormat;
     m_device->CreateDepthStencilView(m_depthBuffer.Get(), &dsvDesc, m_dsvHeap->GetCPUDescriptorHandleForHeapStart());
 
+    for (int i = 0; i < m_backBufferCount; ++i)
+        m_backbuffers[i]->SetName((std::wstring(L"Back Buffer ") + std::to_wstring(i)).c_str());
+
+
+    //-------------
+    // Handle MSAA
+    //-------------
+
+    // Get 4X MSAA quality level
+    // All Direct3D 11 capable devices support 4X MSAA fir all render target formats
+    // So we only need to check quality support
+    D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS level = {};
+    level.Format      = m_backBufferFormat;
+    level.SampleCount = m_sampleCount;
+    auto hr = m_device->CheckFeatureSupport(
+        D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS, 
+        &level,
+        sizeof(level)
+    );
+    if (FAILED(hr))
+    {
+        throw std::runtime_error("Not support 4xMSAA");
+    }
+    m_4xMSAAQualityLevels = level.NumQualityLevels - 1;
+
+    if (m_useMSAA)
+    {
+        // Create descriptor Heap
+        heapDesc = {};
+        heapDesc.NumDescriptors = 1;
+        heapDesc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+        ThrowIfFailed(m_device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(m_MSAArtvHeap.GetAddressOf())));
+        heapDesc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+        ThrowIfFailed(m_device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(m_MSAAdsvHeap.GetAddressOf())));
+        // heapDesc.NumDescriptors = 2;
+        // heapDesc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        // heapDesc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        // ThrowIfFailed(m_device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(m_MSAAcbvHeap.GetAddressOf())));
+
+        // Create resource
+        resourceDesc = {};
+        resourceDesc.Dimension          = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        resourceDesc.Width              = m_width;
+        resourceDesc.Height             = m_height;
+        resourceDesc.DepthOrArraySize   = 1;
+        resourceDesc.MipLevels          = 1;
+        resourceDesc.Format             = m_backBufferFormat;
+        resourceDesc.SampleDesc.Count   = m_sampleCount;
+        resourceDesc.SampleDesc.Quality = m_4xMSAAQualityLevels;
+        resourceDesc.Flags              = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+
+        clearValue = {};
+        clearValue.Format   = m_backBufferFormat;
+        clearValue.Color[0] = 40.f / 255;
+        clearValue.Color[1] = 44.f / 255;
+        clearValue.Color[2] = 52.f / 255;
+        clearValue.Color[3] = 1.f;
+
+        ThrowIfFailed(m_device->CreateCommittedResource(
+            &heapProperties, 
+            D3D12_HEAP_FLAG_NONE, 
+            &resourceDesc,
+            D3D12_RESOURCE_STATE_RENDER_TARGET, 
+            &clearValue, 
+            IID_PPV_ARGS(m_MSAArtv.GetAddressOf())));
+        m_MSAArtv->SetName(L"MSAA Render Target");
+
+        resourceDesc.Format = m_depthBufferFormat;
+        resourceDesc.Flags  = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+        clearValue = {};
+        clearValue.Format             = m_depthBufferFormat;
+        clearValue.DepthStencil.Depth = 1.f;
+        ThrowIfFailed(m_device->CreateCommittedResource(
+            &heapProperties, 
+            D3D12_HEAP_FLAG_NONE, 
+            &resourceDesc,
+            D3D12_RESOURCE_STATE_DEPTH_WRITE, 
+            &clearValue, 
+            IID_PPV_ARGS(m_MSAAdsv.GetAddressOf())));
+
+        // Create descriptor
+        m_device->CreateRenderTargetView(m_MSAArtv.Get(), nullptr, m_MSAArtvHeap->GetCPUDescriptorHandleForHeapStart());
+        dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DMS;
+        m_device->CreateDepthStencilView(m_MSAAdsv.Get(), &dsvDesc, m_MSAAdsvHeap->GetCPUDescriptorHandleForHeapStart());
+    }
+
     // ------------------------------------
     //  Set viewport and scissor Rectangle
     // ------------------------------------
@@ -367,40 +479,87 @@ void DirectX12::drawBegin()
     // These need to be reset when the command list is reset
     m_commandList->RSSetViewports(1, &m_viewport);
 
-    POINT center = { m_width / 2, m_height / 2 };
-    auto width = m_width / 2;
-    auto height = m_height / 2;
-    m_scissorRect.left = center.x - width / 2;
-    m_scissorRect.right = center.x + width / 2;
-    m_scissorRect.bottom = center.y + height / 2;
-    m_scissorRect.top = center.y - height / 2;
+    // POINT center = { m_width / 2, m_height / 2 };
+    // auto width = m_width / 2;
+    // auto height = m_height / 2;
+    // m_scissorRect.left = center.x - width / 2;
+    // m_scissorRect.right = center.x + width / 2;
+    // m_scissorRect.bottom = center.y + height / 2;
+    // m_scissorRect.top = center.y - height / 2;
     m_commandList->RSSetScissorRects(1, &m_scissorRect);
 
     // Convert back buffer state from present to render target
+    auto state = m_useMSAA ? D3D12_RESOURCE_STATE_RESOLVE_DEST : D3D12_RESOURCE_STATE_RENDER_TARGET;
     auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-        m_backbuffers[m_currentBackbufferIndex].Get(), 
-        D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        m_backbuffers[m_backbufferIndex].Get(), 
+        D3D12_RESOURCE_STATE_PRESENT, state);
     m_commandList->ResourceBarrier(1, &barrier);
 
     // Clear back buffers and depth buffer
-    auto backBufferDescriptorHandle = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
-    backBufferDescriptorHandle.ptr += m_currentBackbufferIndex * m_rtvDescriptorSize;
-    auto depthBufferDescriptorHandle = m_dsvHeap->GetCPUDescriptorHandleForHeapStart();
-    // Clear color
-    static constexpr float color[] = { 40.f / 255, 44.f / 255, 52.f / 255, 1.f };
-    m_commandList->ClearRenderTargetView(backBufferDescriptorHandle, color, 0, nullptr);
-    m_commandList->ClearDepthStencilView(depthBufferDescriptorHandle, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.f, 0, 0, nullptr);
+    if (m_useMSAA)
+    {
+        static constexpr float color[] = { 40.f / 255, 44.f / 255, 52.f / 255, 1.f };
+        m_commandList->ClearRenderTargetView(m_MSAArtvHeap->GetCPUDescriptorHandleForHeapStart(), color, 0, nullptr);
+        m_commandList->ClearDepthStencilView(m_MSAAdsvHeap->GetCPUDescriptorHandleForHeapStart(), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.f, 0, 0, nullptr);
+    }
+    else
+    {
+        static constexpr float color[] = { 40.f / 255, 44.f / 255, 52.f / 255, 1.f };
+        auto backBufferDescriptorHandle = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
+        backBufferDescriptorHandle.ptr += m_backbufferIndex * m_rtvDescriptorSize;
+        m_commandList->ClearRenderTargetView(backBufferDescriptorHandle, color, 0, nullptr);
+        m_commandList->ClearDepthStencilView(m_dsvHeap->GetCPUDescriptorHandleForHeapStart(), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.f, 0, 0, nullptr);
+    }
 
     // Set render target
-    m_commandList->OMSetRenderTargets(1, &backBufferDescriptorHandle, true, &depthBufferDescriptorHandle);
+    if (m_useMSAA)
+    {
+        auto handle = m_MSAArtvHeap->GetCPUDescriptorHandleForHeapStart();
+        auto handledep = m_MSAAdsvHeap->GetCPUDescriptorHandleForHeapStart();
+        m_commandList->OMSetRenderTargets(1, &handle, true, &handledep);
+    }
+    else
+    {
+        auto backBufferDescriptorHandle = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
+        backBufferDescriptorHandle.ptr += m_backbufferIndex * m_rtvDescriptorSize;
+        auto depthBufferDescriptorHandle = m_dsvHeap->GetCPUDescriptorHandleForHeapStart();
+        m_commandList->OMSetRenderTargets(1, &backBufferDescriptorHandle, true, &depthBufferDescriptorHandle);
+    }
 }
 
 void DirectX12::drawEnd()
 {
-    auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-        m_backbuffers[m_currentBackbufferIndex].Get(), 
-        D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
-    m_commandList->ResourceBarrier(1, &barrier);
+    if (m_useMSAA)
+    {
+        auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+            m_MSAArtv.Get(), 
+            D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_RESOLVE_SOURCE);
+        m_commandList->ResourceBarrier(1, &barrier);
+
+        m_commandList->ResolveSubresource(
+            m_backbuffers[m_backbufferIndex].Get(), 
+            0, 
+            m_MSAArtv.Get(), 
+            0, 
+            m_backBufferFormat);
+
+        barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+            m_backbuffers[m_backbufferIndex].Get(), 
+            D3D12_RESOURCE_STATE_RESOLVE_DEST, D3D12_RESOURCE_STATE_PRESENT);
+        m_commandList->ResourceBarrier(1, &barrier);
+
+        barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+            m_MSAArtv.Get(), 
+            D3D12_RESOURCE_STATE_RESOLVE_SOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        m_commandList->ResourceBarrier(1, &barrier);
+    }
+    else
+    {
+        auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+            m_backbuffers[m_backbufferIndex].Get(), 
+            D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+        m_commandList->ResourceBarrier(1, &barrier);
+    }
 
     // Close commit list
     ThrowIfFailed(m_commandList->Close());
@@ -408,7 +567,7 @@ void DirectX12::drawEnd()
     m_commandQueue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList**>(m_commandList.GetAddressOf()));
     // Swap buffer
     ThrowIfFailed(m_swapChain->Present(0, 0));
-    m_currentBackbufferIndex = (m_currentBackbufferIndex + 1) % 2;
+    m_backbufferIndex = (m_backbufferIndex + 1) % m_backBufferCount;
 
     flushCommandQueue();
 }
@@ -422,20 +581,20 @@ void DirectX12::onResize()
     ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
 
     // Reset back buffers and swap chain
-    m_backbuffers[0].Reset();
-    m_backbuffers[1].Reset();
+    for (int i = 0; i < m_backBufferCount; ++i)
+        m_backbuffers[i].Reset();
 
     ThrowIfFailed(m_swapChain->ResizeBuffers(
-        2, 
+        m_backBufferCount, 
         m_width, m_height, 
         m_backBufferFormat, 
         DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH)
     );
 
-    m_currentBackbufferIndex = 0;
+    m_backbufferIndex = 0;
 
     auto rtvHandle = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
-    for (int i = 0; i < 2; ++i)
+    for (int i = 0; i < m_backBufferCount; ++i)
     {
         ThrowIfFailed(m_swapChain->GetBuffer(i, IID_PPV_ARGS(m_backbuffers[i].GetAddressOf())));
         m_device->CreateRenderTargetView(m_backbuffers[i].Get(), nullptr, rtvHandle);
@@ -489,22 +648,22 @@ void DirectX12::onResize()
 
 void DirectX12::flushCommandQueue()
 {
+    static size_t fenceValue = 0;
+    ++fenceValue;
     // Wait GPU execute complete
-    static UINT64 fence;
-    ++fence;
-    ThrowIfFailed(m_commandQueue->Signal(m_fence.Get(), fence));
+    ThrowIfFailed(m_commandQueue->Signal(m_fence.Get(), fenceValue));
     // Wait until GPU has completed commands up to this fence point
-    if (m_fence->GetCompletedValue() < fence)
+    if (m_fence->GetCompletedValue() < fenceValue)
     {
         HANDLE eventHandle = CreateEventExW(nullptr, nullptr, false, EVENT_ALL_ACCESS);
         // Fire event when GPU hits current fence
-        ThrowIfFailed(m_fence->SetEventOnCompletion(fence, eventHandle));
+        ThrowIfFailed(m_fence->SetEventOnCompletion(fenceValue, eventHandle));
         if (eventHandle == nullptr)
         {
             ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()));
         }
         // Wait until GPU hits current fence event is fired
-        WaitForSingleObject(eventHandle, INFINITE);
+        WaitForSingleObjectEx(eventHandle, INFINITE, FALSE);
         CloseHandle(eventHandle);
     }
 }
