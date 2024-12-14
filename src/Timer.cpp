@@ -54,21 +54,20 @@ float Timer::getTime() const noexcept
 
 void Timer::update() noexcept
 {
-    static double deltaTime = 0.0;
     if (m_paused)
     {
-        deltaTime = 0;
+        m_delta = 0;
         return;
     }
 
     QueryPerformanceCounter((LARGE_INTEGER*)&m_currTime);
     
-    deltaTime = (m_currTime - m_prevTime) * m_secondsPerCount;
+    m_delta = (m_currTime - m_prevTime) * m_secondsPerCount;
     m_prevTime = m_currTime;
 
-    if (deltaTime < 0.0)
+    if (m_delta < 0.0)
     {
-        deltaTime = 0.0;
+        m_delta = 0.0;
     }
 }
 

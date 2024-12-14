@@ -49,6 +49,11 @@ LRESULT DirectX12::wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
             m_useMSAA = !m_useMSAA;
             createPipeline();
         }
+        // if (wParam == 'w' || wParam == 'W')
+        // {
+        //     m_wireframe = !m_wireframe;
+        //     createPipeline();
+        // }
         return 0;
 
     case WM_ACTIVATE:
@@ -114,6 +119,7 @@ LRESULT DirectX12::wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         m_paused   = false;
         m_resizing = false;
         m_timer.resume();
+        onResize();
         return 0;
 
     case WM_LBUTTONDOWN:
@@ -284,6 +290,7 @@ DirectX12::DirectX12()
     // Get rtv and dsv descriptor size
     m_rtvDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
     m_dsvDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+    m_cbvSrvUavDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
     
     // Create descriptor heaps for back buffer and depth buffer
     // CPU will use them to access GPU resource
@@ -376,56 +383,7 @@ DirectX12::DirectX12()
         ThrowIfFailed(m_device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(m_MSAArtvHeap.GetAddressOf())));
         heapDesc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
         ThrowIfFailed(m_device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(m_MSAAdsvHeap.GetAddressOf())));
-        // heapDesc.NumDescriptors = 2;
-        // heapDesc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-        // heapDesc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-        // ThrowIfFailed(m_device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(m_MSAAcbvHeap.GetAddressOf())));
-
-        // Create resource
-        resourceDesc = {};
-        resourceDesc.Dimension          = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-        resourceDesc.Width              = m_width;
-        resourceDesc.Height             = m_height;
-        resourceDesc.DepthOrArraySize   = 1;
-        resourceDesc.MipLevels          = 1;
-        resourceDesc.Format             = m_backBufferFormat;
-        resourceDesc.SampleDesc.Count   = m_sampleCount;
-        resourceDesc.SampleDesc.Quality = m_4xMSAAQualityLevels;
-        resourceDesc.Flags              = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
-
-        clearValue = {};
-        clearValue.Format   = m_backBufferFormat;
-        clearValue.Color[0] = 40.f / 255;
-        clearValue.Color[1] = 44.f / 255;
-        clearValue.Color[2] = 52.f / 255;
-        clearValue.Color[3] = 1.f;
-
-        ThrowIfFailed(m_device->CreateCommittedResource(
-            &heapProperties, 
-            D3D12_HEAP_FLAG_NONE, 
-            &resourceDesc,
-            D3D12_RESOURCE_STATE_RENDER_TARGET, 
-            &clearValue, 
-            IID_PPV_ARGS(m_MSAArtv.GetAddressOf())));
-        m_MSAArtv->SetName(L"MSAA Render Target");
-
-        resourceDesc.Format = m_depthBufferFormat;
-        resourceDesc.Flags  = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
-        clearValue = {};
-        clearValue.Format             = m_depthBufferFormat;
-        clearValue.DepthStencil.Depth = 1.f;
-        ThrowIfFailed(m_device->CreateCommittedResource(
-            &heapProperties, 
-            D3D12_HEAP_FLAG_NONE, 
-            &resourceDesc,
-            D3D12_RESOURCE_STATE_DEPTH_WRITE, 
-            &clearValue, 
-            IID_PPV_ARGS(m_MSAAdsv.GetAddressOf())));
-
-        // Create descriptor
-        m_device->CreateRenderTargetView(m_MSAArtv.Get(), nullptr, m_MSAArtvHeap->GetCPUDescriptorHandleForHeapStart());
-        dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DMS;
-        m_device->CreateDepthStencilView(m_MSAAdsv.Get(), &dsvDesc, m_MSAAdsvHeap->GetCPUDescriptorHandleForHeapStart());
+        createMSAAResources();
     }
 
     // ------------------------------------
@@ -438,30 +396,112 @@ DirectX12::DirectX12()
 
     m_scissorRect.right  = m_width;
     m_scissorRect.bottom = m_height;
+}
 
+void DirectX12::createPipeline()
+{
+    if (m_shaders.empty() || m_inputLayout.empty())
+        throw std::runtime_error("Set shaders and input layout before craeting pipeline!");
 
-    // -----------------------
-    //  Create root signature
-    // -----------------------
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+    psoDesc.InputLayout    = { m_inputLayout.data(), static_cast<UINT>(m_inputLayout.size()) };
+    psoDesc.pRootSignature = m_rootSignature.Get();
+    psoDesc.VS = 
+    {
+        reinterpret_cast<BYTE*>(m_shaders.at("vs")->GetBufferPointer()),
+        m_shaders.at("vs")->GetBufferSize()
+    };
+    psoDesc.PS =
+    {
+        reinterpret_cast<BYTE*>(m_shaders.at("ps")->GetBufferPointer()),
+        m_shaders.at("ps")->GetBufferSize()
+    };
+    psoDesc.RasterizerState       = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    // psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_FRONT;
+    psoDesc.RasterizerState.AntialiasedLineEnable = TRUE;
+    psoDesc.RasterizerState.MultisampleEnable = TRUE;
+    psoDesc.BlendState            = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    psoDesc.DepthStencilState     = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    psoDesc.SampleMask            = UINT_MAX;
+    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    psoDesc.NumRenderTargets      = 1;
+    psoDesc.RTVFormats[0]         = m_backBufferFormat;
+    psoDesc.SampleDesc.Count      = m_useMSAA ? m_sampleCount : 1;
+    psoDesc.SampleDesc.Quality    = m_useMSAA ? m_4xMSAAQualityLevels : 0;
+    psoDesc.DSVFormat             = m_depthBufferFormat;
+    // TODO: more flexbile which can contains different pso
+    ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_psos["draw"].ReleaseAndGetAddressOf())));
 
-    D3D12_DESCRIPTOR_RANGE cbvTable = {};
-    cbvTable.RangeType      = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
-    cbvTable.NumDescriptors = 1;
-    cbvTable.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+    psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+    ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_psos["wireframe"].ReleaseAndGetAddressOf())));
+}
 
-    D3D12_ROOT_PARAMETER rootParameter[1] = {};
-    rootParameter[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE; 
-    rootParameter[0].DescriptorTable.NumDescriptorRanges = cbvTable.NumDescriptors;
-    rootParameter[0].DescriptorTable.pDescriptorRanges   = &cbvTable;
-    
-    D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc = {};
-    rootSignatureDesc.NumParameters = 1;
-    rootSignatureDesc.pParameters   = rootParameter;
-    rootSignatureDesc.Flags         = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+void DirectX12::createMSAAResources()
+{
+    D3D12_RESOURCE_DESC resourceDesc = {};
+    resourceDesc.Dimension          = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    resourceDesc.Width              = m_width;
+    resourceDesc.Height             = m_height;
+    resourceDesc.DepthOrArraySize   = 1;
+    resourceDesc.MipLevels          = 1;
+    resourceDesc.Format             = m_backBufferFormat;
+    resourceDesc.SampleDesc.Count   = m_sampleCount;
+    resourceDesc.SampleDesc.Quality = m_4xMSAAQualityLevels;
+    resourceDesc.Flags              = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+
+    D3D12_CLEAR_VALUE clearValue = {};
+    clearValue.Format   = m_backBufferFormat;
+    clearValue.Color[0] = 40.f / 255;
+    clearValue.Color[1] = 44.f / 255;
+    clearValue.Color[2] = 52.f / 255;
+    clearValue.Color[3] = 1.f;
+
+    D3D12_HEAP_PROPERTIES heapProperties = {};
+    heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;
+
+    ThrowIfFailed(m_device->CreateCommittedResource(
+        &heapProperties, 
+        D3D12_HEAP_FLAG_NONE, 
+        &resourceDesc,
+        D3D12_RESOURCE_STATE_RENDER_TARGET, 
+        &clearValue, 
+        IID_PPV_ARGS(m_MSAArtv.ReleaseAndGetAddressOf())));
+    m_MSAArtv->SetName(L"MSAA Render Target");
+
+    resourceDesc.Format = m_depthBufferFormat;
+    resourceDesc.Flags  = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+    clearValue = {};
+    clearValue.Format             = m_depthBufferFormat;
+    clearValue.DepthStencil.Depth = 1.f;
+    ThrowIfFailed(m_device->CreateCommittedResource(
+        &heapProperties, 
+        D3D12_HEAP_FLAG_NONE, 
+        &resourceDesc,
+        D3D12_RESOURCE_STATE_DEPTH_WRITE, 
+        &clearValue, 
+        IID_PPV_ARGS(m_MSAAdsv.ReleaseAndGetAddressOf())));
+
+    // Create descriptor
+    m_device->CreateRenderTargetView(m_MSAArtv.Get(), nullptr, m_MSAArtvHeap->GetCPUDescriptorHandleForHeapStart());
+    D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
+    dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DMS;
+    dsvDesc.Format        = m_depthBufferFormat;
+    m_device->CreateDepthStencilView(m_MSAAdsv.Get(), &dsvDesc, m_MSAAdsvHeap->GetCPUDescriptorHandleForHeapStart());
+}
+
+void DirectX12::createRootSignature(CD3DX12_DESCRIPTOR_RANGE* pDescriptorRange, int num)
+{
+    std::vector<CD3DX12_ROOT_PARAMETER> rootParameter(num);
+    for (int i = 0; i < num; ++i)
+    {
+        rootParameter[i].InitAsDescriptorTable(1, &pDescriptorRange[i]);
+    }
+    CD3DX12_ROOT_SIGNATURE_DESC desc(num, rootParameter.data(), 0, nullptr,
+        D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
     ComPtr<ID3DBlob> serializedRootSignature;
     ComPtr<ID3DBlob> errorBlob;
-    hr = D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1,
+    auto hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1,
         serializedRootSignature.GetAddressOf(), errorBlob.GetAddressOf());
     if (errorBlob != nullptr)
     {
@@ -475,41 +515,6 @@ DirectX12::DirectX12()
         serializedRootSignature->GetBufferSize(),
         IID_PPV_ARGS(m_rootSignature.GetAddressOf())
     ));
-}
-
-void DirectX12::createPipeline()
-{
-    if (!m_vs || !m_ps || m_inputLayout.empty())
-        throw std::runtime_error("Set shaders and input layout before craeting pipeline!");
-
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-    psoDesc.InputLayout    = { m_inputLayout.data(), static_cast<UINT>(m_inputLayout.size()) };
-    psoDesc.pRootSignature = m_rootSignature.Get();
-    psoDesc.VS = 
-    {
-        reinterpret_cast<BYTE*>(m_vs->GetBufferPointer()),
-        m_vs->GetBufferSize()
-    };
-    psoDesc.PS =
-    {
-        reinterpret_cast<BYTE*>(m_ps->GetBufferPointer()),
-        m_ps->GetBufferSize()
-    };
-    psoDesc.RasterizerState       = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-    // psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_FRONT;
-    psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
-    psoDesc.RasterizerState.AntialiasedLineEnable = TRUE;
-    psoDesc.RasterizerState.MultisampleEnable = TRUE;
-    psoDesc.BlendState            = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-    psoDesc.DepthStencilState     = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-    psoDesc.SampleMask            = UINT_MAX;
-    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    psoDesc.NumRenderTargets      = 1;
-    psoDesc.RTVFormats[0]         = m_backBufferFormat;
-    psoDesc.SampleDesc.Count      = m_useMSAA ? m_sampleCount : 1;
-    psoDesc.SampleDesc.Quality    = m_4xMSAAQualityLevels;
-    psoDesc.DSVFormat             = m_depthBufferFormat;
-    ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_pso.ReleaseAndGetAddressOf())));
 }
 
 void DirectX12::run()
@@ -539,9 +544,10 @@ void DirectX12::run()
             if (!m_paused)
             {
                 update();
-                drawBegin();
+                // TODO: don't use drawBegin and drawEnd
+                // drawBegin();
                 draw();
-                drawEnd();
+                // drawEnd();
             }
             else
             {
@@ -555,7 +561,14 @@ void DirectX12::drawBegin()
 {
     // Reset command list and allocator
     ThrowIfFailed(m_commandAllocator->Reset());
-    ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), m_pso.Get()));
+    if (m_wireframe)
+    {
+        ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), m_psos.at("wireframe").Get()));
+    }
+    else
+    {
+        ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), m_psos.at("draw").Get()));
+    }
 
     // Reset viewport and scissor rectangle
     // These need to be reset when the command list is reset
@@ -651,7 +664,14 @@ void DirectX12::drawEnd()
     ThrowIfFailed(m_swapChain->Present(0, 0));
     m_backbufferIndex = (m_backbufferIndex + 1) % m_backBufferCount;
 
-    flushCommandQueue();
+    if (m_tmp_fr)
+    {
+        tmpFunc_drawEnd();
+    }
+    else 
+    {
+        flushCommandQueue();
+    }
 }
 
 void DirectX12::onResize()
@@ -661,6 +681,12 @@ void DirectX12::onResize()
 
     // Reset command list
     ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
+
+
+    if (m_useMSAA)
+    {
+        createMSAAResources();
+    }
 
     // Reset back buffers and swap chain
     for (int i = 0; i < m_backBufferCount; ++i)
@@ -730,16 +756,15 @@ void DirectX12::onResize()
 
 void DirectX12::flushCommandQueue()
 {
-    static size_t fenceValue = 0;
-    ++fenceValue;
+    ++m_currentFence;
     // Wait GPU execute complete
-    ThrowIfFailed(m_commandQueue->Signal(m_fence.Get(), fenceValue));
+    ThrowIfFailed(m_commandQueue->Signal(m_fence.Get(), m_currentFence));
     // Wait until GPU has completed commands up to this fence point
-    if (m_fence->GetCompletedValue() < fenceValue)
+    if (m_fence->GetCompletedValue() < m_currentFence)
     {
         HANDLE eventHandle = CreateEventExW(nullptr, nullptr, false, EVENT_ALL_ACCESS);
         // Fire event when GPU hits current fence
-        ThrowIfFailed(m_fence->SetEventOnCompletion(fenceValue, eventHandle));
+        ThrowIfFailed(m_fence->SetEventOnCompletion(m_currentFence, eventHandle));
         if (eventHandle == nullptr)
         {
             ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()));
@@ -772,7 +797,7 @@ void DirectX12::onMouseMove(WPARAM btnState, int x, int y)
         m_theta -= dx;
         m_phi   -= dy;
 
-        m_phi = std::clamp(m_phi, 0.1f, std::numbers::pi_v<float> - 0.1f);
+        m_phi = std::clamp(m_phi, 0.001f, std::numbers::pi_v<float> - 0.001f);
     }
     else if (btnState & MK_RBUTTON)
     {

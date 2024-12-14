@@ -15,12 +15,21 @@ Box::Box()
 {
     ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
 
+    // -----------------------
+    //  Create root signature
+    // -----------------------
+
+    CD3DX12_DESCRIPTOR_RANGE descriptorRange[1];
+    descriptorRange[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);
+    createRootSignature(descriptorRange, 1);
+
+
     // ----------------------------------
     //  Create constant buffer resources
     // ----------------------------------
 
     // Hardware requires multiples of 256 for constant data
-    int size = getMultiplesOf256(sizeof(ObjectConstant));
+    int size = getMultiplesOf256<sizeof(ObjectConstant)>();
     
     D3D12_HEAP_PROPERTIES heapProp = {};
     heapProp.Type = D3D12_HEAP_TYPE_UPLOAD;
@@ -64,8 +73,8 @@ Box::Box()
     //  Layout
     // --------
 
-    setVS(L"../shader/box_vs.cso");
-    setPS(L"../shader/box_ps.cso");
+    setShader("vs", L"../shader/box_vs.cso");
+    setShader("ps", L"../shader/box_ps.cso");
 
     m_inputLayout =
     {

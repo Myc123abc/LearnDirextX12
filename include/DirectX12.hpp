@@ -34,10 +34,13 @@ protected:
     virtual void onMouseMove(WPARAM btnState, int x, int y);
     virtual void onMouseWheel(WPARAM wParam);
 
-    inline void setVS(PCWSTR path) { m_vs = DX::loadBinaryFile(path); }
-    inline void setPS(PCWSTR path) { m_ps = DX::loadBinaryFile(path); }
-    // Must set vs, ps, and input layout before creating pipeline
+    inline void setShader(std::string_view name, std::wstring_view path) { m_shaders[name.data()] = DX::loadBinaryFile(path); }
+    // Must set shaders, and input layout before creating pipeline
     void createPipeline();
+
+    void createMSAAResources();
+
+    void createRootSignature(CD3DX12_DESCRIPTOR_RANGE* descriptorRanges, int num);
 
 private:
     void drawBegin();
@@ -67,6 +70,7 @@ protected:
     DXGI_FORMAT m_backBufferFormat  = DXGI_FORMAT_R8G8B8A8_UNORM;    // 32-bit color format, unsigned format (0.0 ~ 1.0 <=> 0 ~ 255)
     DXGI_FORMAT m_depthBufferFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
 
+    bool        m_wireframe = false;
     bool        m_useMSAA = true;
     int         m_4xMSAAQualityLevels;
     int         m_sampleCount = 4;
@@ -80,6 +84,7 @@ protected:
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> m_commandList;      // Records commands
 
     Microsoft::WRL::ComPtr<ID3D12Fence>   m_fence;      // Use for CPU GPU synchronization
+    UINT64                                m_currentFence = 0;
 
     Microsoft::WRL::ComPtr<IDXGISwapChain> m_swapChain;
 
@@ -93,6 +98,7 @@ protected:
     UINT                                         m_rtvDescriptorSize;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_dsvHeap;
     UINT                                         m_dsvDescriptorSize;
+    UINT                                         m_cbvSrvUavDescriptorSize;
 
     /*
     * Resource is actual resource memory for GPU
@@ -107,7 +113,7 @@ protected:
 
 
 
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pso;
+    std::unordered_map<std::string, Microsoft::WRL::ComPtr<ID3D12PipelineState>> m_psos;
 
     POINT m_mousePosition = {};
 
@@ -122,7 +128,11 @@ protected:
     DirectX::XMFLOAT4X4 m_proj  = DX::createIdentity4x4();
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature>  m_rootSignature;
-    Microsoft::WRL::ComPtr<ID3DBlob> m_vs;
-    Microsoft::WRL::ComPtr<ID3DBlob> m_ps;
+    std::unordered_map<std::string, Microsoft::WRL::ComPtr<ID3DBlob>> m_shaders;
     std::vector<D3D12_INPUT_ELEMENT_DESC> m_inputLayout;
+
+
+    // TODO: use frame resources way not flushCommandQueue
+    bool m_tmp_fr = false;
+    virtual void tmpFunc_drawEnd() {}
 };

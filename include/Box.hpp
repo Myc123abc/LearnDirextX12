@@ -2,7 +2,6 @@
 
 #include "DirectX12.hpp"
 
-#include <vector>
 #include <DirectXPackedVector.h>
 
 struct Vertex

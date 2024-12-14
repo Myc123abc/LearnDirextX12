@@ -3,9 +3,9 @@
 using namespace Microsoft::WRL;
 using namespace DX;
 
-ComPtr<ID3DBlob> DX::loadBinaryFile(const std::wstring& filename)
+ComPtr<ID3DBlob> DX::loadBinaryFile(std::wstring_view filename)
 {
-    std::ifstream ifile(filename, std::ios::binary);
+    std::ifstream ifile(filename.data(), std::ios::binary);
 
     ifile.seekg(0, std::ios_base::end);
     auto size = static_cast<int>(ifile.tellg());

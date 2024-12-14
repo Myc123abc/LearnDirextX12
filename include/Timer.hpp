@@ -27,6 +27,7 @@ namespace GalgameEngine
         float getTime() const noexcept;
         float getFPS()  const noexcept { return m_fps; }
         float getMSPF() const noexcept { return m_mspf; }
+        float getDelta() const noexcept { return m_delta; }
 
     private:
         double m_secondsPerCount;
@@ -37,9 +38,10 @@ namespace GalgameEngine
         __int64 m_prevTime   = 0;
         __int64 m_currTime   = 0;
 
-        float     m_fps      = 0;
-        float     m_mspf     = 0;
+        float     m_fps      = 0.f;
+        float     m_mspf     = 0.f;
         bool      m_paused   = false;
+        float     m_delta    = 0.f;
 
         std::function<void()> m_func = []{};
     };
