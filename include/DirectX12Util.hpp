@@ -59,7 +59,6 @@ namespace DX
         UINT64 size,
         Microsoft::WRL::ComPtr<ID3D12Resource>& uploadBuffer);
 
-
     /*
     * Upload Buffer
     * Use for transform data from CPU to GPU (Upload Buffer to Constant Buffer)

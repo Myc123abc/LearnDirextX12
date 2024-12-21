@@ -13,7 +13,6 @@ using namespace DX;
 
 Box::Box()
 {
-    ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
 
     // -----------------------
     //  Create root signature
@@ -85,7 +84,7 @@ Box::Box()
     };
 
     createPipeline();
-
+#pragma region vertices and indices
     // ----------------------
     //  Vertices and Indices
     // ----------------------
@@ -213,7 +212,7 @@ Box::Box()
         // Point
         8, 9, 10, 11,
     };
-
+#pragma endregion
     constexpr auto vPosSize = verticesPos.size() * sizeof(VPosData);
     constexpr auto vColorSize = verticesColor.size() * sizeof(VColorData);
     constexpr auto indicesSize = indices.size() * sizeof(int16_t);
@@ -229,6 +228,7 @@ Box::Box()
     // memcpy(m_vertexBufferData->GetBufferPointer(), vertices.data(), vSize);
 
 
+    ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
     // Create default buffer
     m_vertexPosBufferGPU = createDefaultBuffer(m_device.Get(), m_commandList.Get(), verticesPos.data(), vPosSize, m_vertexPosBufferCPU);
     m_vertexColorBufferGPU = createDefaultBuffer(m_device.Get(), m_commandList.Get(), verticesColor.data(), vColorSize, m_vertexColorBufferCPU);
@@ -252,6 +252,13 @@ Box::Box()
     ThrowIfFailed(m_commandList->Close());
     m_commandQueue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList**>(m_commandList.GetAddressOf()));
     flushCommandQueue();
+
+    m_vertexPosBufferCPU.Reset();
+    m_vertexColorBufferCPU.Reset();
+    m_indexBufferCPU.Reset();
+    m_vertexColorBufferData.Reset();
+    m_vertexPosBufferData.Reset();
+    m_indexBufferData.Reset();
 }
 
 Box::~Box()

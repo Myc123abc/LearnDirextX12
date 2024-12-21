@@ -545,9 +545,9 @@ void DirectX12::run()
             {
                 update();
                 // TODO: don't use drawBegin and drawEnd
-                // drawBegin();
+                drawBegin();
                 draw();
-                // drawEnd();
+                drawEnd();
             }
             else
             {

@@ -1,12 +1,13 @@
 #pragma once
 
 #include "Timer.hpp"
+#include "DirectX12Util.hpp"
 
 class DirectX12
 {
 public:
     DirectX12();
-    ~DirectX12() = default;
+    ~DirectX12() { if (m_device) flushCommandQueue(); }
 
     DirectX12(const DirectX12&)            = delete;
     DirectX12(DirectX12&&)                 = delete;
