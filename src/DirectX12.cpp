@@ -47,13 +47,13 @@ LRESULT DirectX12::wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         if (wParam == 'm' || wParam == 'M')
         {
             m_useMSAA = !m_useMSAA;
-            createPipeline();
+            buildPipeline();
         }
-        // if (wParam == 'w' || wParam == 'W')
-        // {
-        //     m_wireframe = !m_wireframe;
-        //     createPipeline();
-        // }
+        if (wParam == 'w' || wParam == 'W')
+        {
+            m_wireframe = !m_wireframe;
+            buildPipeline();
+        }
         return 0;
 
     case WM_ACTIVATE:
@@ -398,7 +398,7 @@ DirectX12::DirectX12()
     m_scissorRect.bottom = m_height;
 }
 
-void DirectX12::createPipeline()
+void DirectX12::buildPipeline()
 {
     if (m_shaders.empty() || m_inputLayout.empty())
         throw std::runtime_error("Set shaders and input layout before craeting pipeline!");
@@ -489,16 +489,8 @@ void DirectX12::createMSAAResources()
     m_device->CreateDepthStencilView(m_MSAAdsv.Get(), &dsvDesc, m_MSAAdsvHeap->GetCPUDescriptorHandleForHeapStart());
 }
 
-void DirectX12::createRootSignature(CD3DX12_DESCRIPTOR_RANGE* pDescriptorRange, int num)
+void DirectX12::buildRootSignature(const D3D12_ROOT_SIGNATURE_DESC& desc)
 {
-    std::vector<CD3DX12_ROOT_PARAMETER> rootParameter(num);
-    for (int i = 0; i < num; ++i)
-    {
-        rootParameter[i].InitAsDescriptorTable(1, &pDescriptorRange[i]);
-    }
-    CD3DX12_ROOT_SIGNATURE_DESC desc(num, rootParameter.data(), 0, nullptr,
-        D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
-
     ComPtr<ID3DBlob> serializedRootSignature;
     ComPtr<ID3DBlob> errorBlob;
     auto hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1,

@@ -16,8 +16,7 @@ DrawGeometry::DrawGeometry() {
 
   buildConstantBufferResource();
 
-  // TODO:: change to buildPipeline
-  createPipeline();
+  buildPipeline();
 
   ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), nullptr));
 
@@ -33,97 +32,28 @@ DrawGeometry::DrawGeometry() {
 }
 
 void DrawGeometry::buildRootSignature() {
-  // Object
-  D3D12_DESCRIPTOR_RANGE descRange[2] = {};
-  descRange[0].NumDescriptors = 1;
-  descRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
-  descRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-  descRange[0].BaseShaderRegister = 0;
-  descRange[0].RegisterSpace = 0;
-
-  // Frame
-  descRange[1].NumDescriptors = 1;
-  descRange[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
-  descRange[1].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-  descRange[1].BaseShaderRegister = 1;
-  descRange[1].RegisterSpace = 0;
+  CD3DX12_DESCRIPTOR_RANGE descRange[2] = {};
+  descRange[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);
+  descRange[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1);
   
-  D3D12_ROOT_PARAMETER rootPara[2] = {};
-  rootPara[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-  rootPara[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-  rootPara[0].DescriptorTable.NumDescriptorRanges = 1;
-  rootPara[0].DescriptorTable.pDescriptorRanges = &descRange[0];
+  CD3DX12_ROOT_PARAMETER rootPara[2] = {};
+  rootPara[0].InitAsDescriptorTable(1, &descRange[0]);
+  rootPara[1].InitAsDescriptorTable(1, &descRange[1]);
 
-  rootPara[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-  rootPara[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-  rootPara[1].DescriptorTable.NumDescriptorRanges = 1;
-  rootPara[1].DescriptorTable.pDescriptorRanges = &descRange[1];
+  CD3DX12_ROOT_SIGNATURE_DESC sigDesc = {};
+  sigDesc.Init(2, rootPara, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
-  D3D12_ROOT_SIGNATURE_DESC sigDesc = {};
-  sigDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-  sigDesc.NumParameters = 2;
-  sigDesc.pParameters = &rootPara[0];
-  sigDesc.NumStaticSamplers = 0;
-  sigDesc.pStaticSamplers = nullptr;
-
-  ComPtr<ID3DBlob> serializedRootSig;
-  ComPtr<ID3DBlob> errorBlob;
-  HRESULT hr = D3D12SerializeRootSignature(&sigDesc, D3D_ROOT_SIGNATURE_VERSION_1, 
-  serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf());
-  if (errorBlob != nullptr) {
-    OutputDebugString((char*)(errorBlob->GetBufferPointer()));
-    ThrowIfFalse(false);
-  }
-  ThrowIfFailed(hr);
-
-  ThrowIfFailed(m_device->CreateRootSignature(
-    0, 
-    serializedRootSig->GetBufferPointer(), 
-    serializedRootSig->GetBufferSize(), 
-    IID_PPV_ARGS(m_rootSignature.GetAddressOf())));
+  DirectX12::buildRootSignature(sigDesc);
 }
 
 void DrawGeometry::buildShadersAndInputLayout() {
   setShader("vs", L"../shader/drawGeo_vs.cso");
   setShader("ps", L"../shader/drawGeo_ps.cso");
 
-  D3D12_INPUT_ELEMENT_DESC desc = {};
-  desc.SemanticName = "POSITION";
-  desc.SemanticIndex = 0;
-  desc.Format = DXGI_FORMAT_R32G32B32_FLOAT;
-  desc.InputSlot = 0;
-  // TODO: Test whether D3D12_APPEND_ALIGNED_ELEMENT can use different slots.
-  desc.AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
-  desc.InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
-  desc.InstanceDataStepRate = 0;
-  m_inputLayout.push_back(desc);
-
-  desc.SemanticName = "COLOR";
-  desc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-  m_inputLayout.push_back(desc);
-}
-
-void DrawGeometry::buildShapeGeometry() {
-  GeometryGenerator geoGen;
-  auto box = geoGen.CreateBox(1.f, 1.f, 1.f, 0);
-
-  std::vector<Vertex> vertices;
-  std::vector<uint16_t> indices;
-
-  vertices.reserve(box.Vertices.size());
-  for (const auto& vertex : box.Vertices)
-    vertices.emplace_back(Vertex{ vertex.Position, XMFLOAT4(Colors::Red) });
-  indices.assign_range(box.GetIndices16());
-
-  auto verticesSize = vertices.size() * sizeof(Vertex);
-  auto indicesSize = indices.size() * sizeof(uint16_t);
-
-  m_verticesDefaultBuffer = createDefaultBuffer(m_device.Get(), m_commandList.Get(), vertices.data(), verticesSize, m_verticesUploadBuffer);
-  m_indicesDefaultBuffer = createDefaultBuffer(m_device.Get(), m_commandList.Get(), indices.data(), indicesSize, m_indicesUploadBuffer);
-
-  m_vertexBufferSize = verticesSize;
-  m_indexBufferSize = indicesSize;
-  m_indexCount = static_cast<int>(indices.size());
+  m_inputLayout = {
+    { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    { "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+  };
 }
 
 void DrawGeometry::buildConstantBufferResource() {
@@ -147,10 +77,34 @@ void DrawGeometry::buildConstantBufferResource() {
   cbvDesc.SizeInBytes = getMultiplesOf256<sizeof(Object)>();
   auto cbvHeapAddr = m_cbvHeap->GetCPUDescriptorHandleForHeapStart();
   m_device->CreateConstantBufferView(&cbvDesc, cbvHeapAddr);
+
   cbvDesc.BufferLocation = m_frameUploadBuffer->get()->GetGPUVirtualAddress();
   cbvDesc.SizeInBytes = getMultiplesOf256<sizeof(Frame)>();
   cbvHeapAddr.ptr += m_cbvSrvUavDescriptorSize;
   m_device->CreateConstantBufferView(&cbvDesc, cbvHeapAddr);
+}
+
+void DrawGeometry::buildShapeGeometry() {
+  GeometryGenerator geoGen;
+  auto box = geoGen.CreateBox(1.f, 1.f, 1.f, 0);
+
+  std::vector<Vertex> vertices;
+  std::vector<uint16_t> indices;
+
+  vertices.reserve(box.Vertices.size());
+  for (const auto& vertex : box.Vertices)
+    vertices.emplace_back(Vertex{ vertex.Position, XMFLOAT4(Colors::Red) });
+  indices.assign_range(box.GetIndices16());
+
+  auto verticesSize = vertices.size() * sizeof(Vertex);
+  auto indicesSize = indices.size() * sizeof(uint16_t);
+
+  m_verticesDefaultBuffer = createDefaultBuffer(m_device.Get(), m_commandList.Get(), vertices.data(), verticesSize, m_verticesUploadBuffer);
+  m_indicesDefaultBuffer = createDefaultBuffer(m_device.Get(), m_commandList.Get(), indices.data(), indicesSize, m_indicesUploadBuffer);
+
+  m_vertexBufferSize = verticesSize;
+  m_indexBufferSize = indicesSize;
+  m_indexCount = static_cast<int>(indices.size());
 }
 
 void DrawGeometry::update() {
@@ -203,7 +157,7 @@ void DrawGeometry::draw() {
 
   m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-  addr.ptr -= m_cbvSrvUavDescriptorSize;
+  addr = m_cbvHeap->GetGPUDescriptorHandleForHeapStart();
   m_commandList->SetGraphicsRootDescriptorTable(0, addr);
   m_commandList->DrawIndexedInstanced(m_indexCount, 1, 0, 0, 0);
 }

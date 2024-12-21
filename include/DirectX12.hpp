@@ -37,11 +37,11 @@ protected:
 
     inline void setShader(std::string_view name, std::wstring_view path) { m_shaders[name.data()] = DX::loadBinaryFile(path); }
     // Must set shaders, and input layout before creating pipeline
-    void createPipeline();
+    void buildPipeline();
 
     void createMSAAResources();
 
-    void createRootSignature(CD3DX12_DESCRIPTOR_RANGE* descriptorRanges, int num);
+    void buildRootSignature(const D3D12_ROOT_SIGNATURE_DESC& desc);
 
 private:
     void drawBegin();
