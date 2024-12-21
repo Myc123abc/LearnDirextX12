@@ -115,17 +115,11 @@ void DrawGeometry::buildShapeGeometry() {
     vertices.emplace_back(Vertex{ vertex.Position, XMFLOAT4(Colors::Red) });
   indices.assign_range(box.GetIndices16());
 
-  ComPtr<ID3DBlob> verticesData;
-  ComPtr<ID3DBlob> indicesData;
   auto verticesSize = vertices.size() * sizeof(Vertex);
   auto indicesSize = indices.size() * sizeof(uint16_t);
-  ThrowIfFailed(D3DCreateBlob(verticesSize, verticesData.GetAddressOf()));
-  memcpy(verticesData->GetBufferPointer(), vertices.data(), verticesSize);
-  ThrowIfFailed(D3DCreateBlob(indicesSize, indicesData.GetAddressOf()));
-  memcpy(indicesData->GetBufferPointer(), indices.data(), indicesSize);
 
-  m_verticesDefaultBuffer = createDefaultBuffer(m_device.Get(), m_commandList.Get(), verticesData.Get(), verticesSize, m_verticesUploadBuffer);
-  m_indicesDefaultBuffer = createDefaultBuffer(m_device.Get(), m_commandList.Get(), indicesData.Get(), indicesSize, m_indicesUploadBuffer);
+  m_verticesDefaultBuffer = createDefaultBuffer(m_device.Get(), m_commandList.Get(), vertices.data(), verticesSize, m_verticesUploadBuffer);
+  m_indicesDefaultBuffer = createDefaultBuffer(m_device.Get(), m_commandList.Get(), indices.data(), indicesSize, m_indicesUploadBuffer);
 
   m_vertexBufferSize = verticesSize;
   m_indexBufferSize = indicesSize;
