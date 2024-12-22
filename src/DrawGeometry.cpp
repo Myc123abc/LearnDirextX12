@@ -57,14 +57,17 @@ void DrawGeometry::buildShadersAndInputLayout() {
 }
 
 void DrawGeometry::buildConstantBufferResource() {
-  // Descriptor:
-  //   Object for box resource
-  //   Frame for global resource
-  int descriptorNum = 2;
+  int objectNum = 2;
+  int frameNum  = 1;
+  int descriptorNum = objectNum + frameNum;
+  m_frameHeapOffset = objectNum;
 
-  m_objectUploadBuffer = std::make_unique<UploadBuffer<Object>>(m_device.Get(), 1);
+  // frame resource
+  // TODO: change to 3 frames
+  m_objectUploadBuffer = std::make_unique<UploadBuffer<Object>>(m_device.Get(), objectNum);
   m_frameUploadBuffer = std::make_unique<UploadBuffer<Frame>>(m_device.Get(), 1);
 
+  // descriptor heap
   D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
   heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
   heapDesc.NumDescriptors = descriptorNum;
@@ -72,64 +75,92 @@ void DrawGeometry::buildConstantBufferResource() {
   heapDesc.NodeMask = 0;
   ThrowIfFailed(m_device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(m_cbvHeap.GetAddressOf())));
 
-  D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
-  cbvDesc.BufferLocation = m_objectUploadBuffer->get()->GetGPUVirtualAddress();
-  cbvDesc.SizeInBytes = getMultiplesOf256<sizeof(Object)>();
-  auto cbvHeapAddr = m_cbvHeap->GetCPUDescriptorHandleForHeapStart();
-  m_device->CreateConstantBufferView(&cbvDesc, cbvHeapAddr);
+  // descriptors
+  D3D12_CONSTANT_BUFFER_VIEW_DESC desc = {};
+  desc.SizeInBytes = m_objectUploadBuffer->getElementSize();
+  auto descriptor = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetCPUDescriptorHandleForHeapStart());
+  for (int i = 0; i < objectNum; ++i) {
+    desc.BufferLocation = m_objectUploadBuffer->getGPUAdd(i);
+    m_device->CreateConstantBufferView(&desc, descriptor);
+    descriptor.Offset(1, m_cbvSrvUavDescriptorSize);
+  }
 
-  cbvDesc.BufferLocation = m_frameUploadBuffer->get()->GetGPUVirtualAddress();
-  cbvDesc.SizeInBytes = getMultiplesOf256<sizeof(Frame)>();
-  cbvHeapAddr.ptr += m_cbvSrvUavDescriptorSize;
-  m_device->CreateConstantBufferView(&cbvDesc, cbvHeapAddr);
+  desc.BufferLocation = m_frameUploadBuffer->getGPUAdd();
+  desc.SizeInBytes = m_frameUploadBuffer->getElementSize();
+  m_device->CreateConstantBufferView(&desc, descriptor);
 }
 
 void DrawGeometry::buildShapeGeometry() {
   GeometryGenerator geoGen;
-  auto box = geoGen.CreateBox(1.f, 1.f, 1.f, 0);
+  auto box = geoGen.CreateBox(2.f, 1.f, 1.f, 0);
+  auto box2 = geoGen.CreateBox(1.f, 2.f, 1.f, 0);
+  // TODO: tow box share the vertices
 
   std::vector<Vertex> vertices;
   std::vector<uint16_t> indices;
 
-  vertices.reserve(box.Vertices.size());
+  auto verticesSize = box.Vertices.size() + box2.Vertices.size();
+  auto indicesSize = box.Indices32.size() + box2.Indices32.size();
+
+  vertices.reserve(verticesSize);
   for (const auto& vertex : box.Vertices)
     vertices.emplace_back(Vertex{ vertex.Position, XMFLOAT4(Colors::Red) });
-  indices.assign_range(box.GetIndices16());
+  for (const auto& vertex : box2.Vertices)
+    vertices.emplace_back(Vertex{ vertex.Position, XMFLOAT4(Colors::Green) });
 
-  auto verticesSize = vertices.size() * sizeof(Vertex);
-  auto indicesSize = indices.size() * sizeof(uint16_t);
+  indices.reserve(indicesSize);
+  indices.append_range(box.GetIndices16());
+  indices.append_range(box2.GetIndices16());
 
-  m_verticesDefaultBuffer = createDefaultBuffer(m_device.Get(), m_commandList.Get(), vertices.data(), verticesSize, m_verticesUploadBuffer);
-  m_indicesDefaultBuffer = createDefaultBuffer(m_device.Get(), m_commandList.Get(), indices.data(), indicesSize, m_indicesUploadBuffer);
+  m_verticesByteSize = vertices.size() * sizeof(Vertex);
+  m_indicesByteSize = indices.size() * sizeof(uint16_t);
 
-  m_vertexBufferSize = verticesSize;
-  m_indexBufferSize = indicesSize;
-  m_indexCount = static_cast<int>(indices.size());
+  m_verticesDefaultBuffer = createDefaultBuffer(m_device.Get(), m_commandList.Get(), vertices.data(), m_verticesByteSize, m_verticesUploadBuffer);
+  m_indicesDefaultBuffer = createDefaultBuffer(m_device.Get(), m_commandList.Get(), indices.data(), m_indicesByteSize, m_indicesUploadBuffer);
+
+  RenderItem item;
+
+  XMStoreFloat4x4(&item.objData.world, XMMatrixTranslation(2.f, 0.f, 0.f));
+  item.index = 0;
+  item.indicesSize = box.Indices32.size();
+  item.verticesOffset = 0;
+  item.indicesOffset = 0;
+  m_renderItems.push_back(item);
+  
+  XMStoreFloat4x4(&item.objData.world, XMMatrixTranslation(-2.f, 0.f, 0.f));
+  item.index = 1;
+  item.indicesSize = box2.Indices32.size();
+  item.verticesOffset = box.Vertices.size();
+  item.indicesOffset = box.Indices32.size();
+  m_renderItems.push_back(item);
 }
 
 void DrawGeometry::update() {
-    float x = m_radius * sinf(m_phi) * cosf(m_theta);
-    float z = m_radius * sinf(m_phi) * sinf(m_theta);
-    float y = m_radius * cosf(m_phi);
+  float x = m_radius * sinf(m_phi) * cosf(m_theta);
+  float z = m_radius * sinf(m_phi) * sinf(m_theta);
+  float y = m_radius * cosf(m_phi);
 
-    auto pos = XMVectorSet(x, y, z, 1.f);
-    auto target = XMVectorZero();
-    auto up = XMVectorSet(0.f, 1.f, 0.f, 0.f);
-    
-    auto view = XMMatrixLookAtLH(pos, target, up);
-    XMStoreFloat4x4(&m_view, view);
+  auto pos = XMVectorSet(x, y, z, 1.f);
+  auto target = XMVectorZero();
+  auto up = XMVectorSet(0.f, 1.f, 0.f, 0.f);
+  
+  auto view = XMMatrixLookAtLH(pos, target, up);
+  XMStoreFloat4x4(&m_view, view);
 
-    auto world = XMLoadFloat4x4(&m_world);
-    auto proj = XMLoadFloat4x4(&m_proj);
-    auto viewProj = view * proj;
+  auto proj = XMLoadFloat4x4(&m_proj);
+  auto viewProj = view * proj;
 
-    Object object;
+  Object object;
+  XMMATRIX world;
+  for (const auto& item : m_renderItems) {
+    world = XMLoadFloat4x4(&item.objData.world);
     XMStoreFloat4x4(&object.world, XMMatrixTranspose(world));
-    m_objectUploadBuffer->copy(0, object);
+    m_objectUploadBuffer->copy(item.index, object);
+  }
 
-    Frame frame;
-    XMStoreFloat4x4(&frame.viewProj, XMMatrixTranspose(viewProj));
-    m_frameUploadBuffer->copy(0, frame);
+  Frame frame;
+  XMStoreFloat4x4(&frame.viewProj, XMMatrixTranspose(viewProj));
+  m_frameUploadBuffer->copy(0, frame);
 }
 
 void DrawGeometry::draw() {
@@ -138,28 +169,32 @@ void DrawGeometry::draw() {
   m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
 
   // Pass frame data
-  auto addr = m_cbvHeap->GetGPUDescriptorHandleForHeapStart();
-  addr.ptr += m_cbvSrvUavDescriptorSize;
+  auto addr = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetGPUDescriptorHandleForHeapStart());
+  addr.Offset(m_frameHeapOffset, m_cbvSrvUavDescriptorSize);
   m_commandList->SetGraphicsRootDescriptorTable(1, addr);
+
+  m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
   // Pass object data
   D3D12_VERTEX_BUFFER_VIEW vertexBufferView = {};
   vertexBufferView.BufferLocation = m_verticesDefaultBuffer->GetGPUVirtualAddress();
   vertexBufferView.StrideInBytes = sizeof(Vertex);
-  vertexBufferView.SizeInBytes = m_vertexBufferSize;
+  vertexBufferView.SizeInBytes = m_verticesByteSize;
   m_commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
 
   D3D12_INDEX_BUFFER_VIEW indexBufferView = {};
   indexBufferView.BufferLocation = m_indicesDefaultBuffer->GetGPUVirtualAddress();
   indexBufferView.Format = m_indexFormat;
-  indexBufferView.SizeInBytes = m_indexBufferSize;
+  indexBufferView.SizeInBytes = m_indicesByteSize;
   m_commandList->IASetIndexBuffer(&indexBufferView);
 
-  m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+  addr = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetGPUDescriptorHandleForHeapStart());
 
-  addr = m_cbvHeap->GetGPUDescriptorHandleForHeapStart();
-  m_commandList->SetGraphicsRootDescriptorTable(0, addr);
-  m_commandList->DrawIndexedInstanced(m_indexCount, 1, 0, 0, 0);
+  for (const auto& item : m_renderItems) {
+    m_commandList->SetGraphicsRootDescriptorTable(0, addr);
+    m_commandList->DrawIndexedInstanced(item.indicesSize, 1, item.indicesOffset, item.verticesOffset, 0);
+    addr.Offset(1, m_cbvSrvUavDescriptorSize);
+  }
 }
 
 void DrawGeometry::onResize() {

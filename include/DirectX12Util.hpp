@@ -70,7 +70,8 @@ namespace DX
         // So far, other situation not using for constant buffer is unknow.
         UploadBuffer(ID3D12Device* device, UINT elementCount, bool isConstantBuffer = true)
         {
-            m_elementSize = sizeof(T);
+            assert(device != nullptr);
+            assert(elementCount > 0);
 
             if (isConstantBuffer)
                 m_elementSize = getMultiplesOf256<sizeof(T)>();
@@ -86,6 +87,8 @@ namespace DX
                 IID_PPV_ARGS(m_uploadBuffer.GetAddressOf())));
 
             ThrowIfFailed(m_uploadBuffer->Map(0, nullptr, reinterpret_cast<void**>(&m_mappedData)));
+
+            m_GPUAddr = m_uploadBuffer->GetGPUVirtualAddress();
         }
 
         ~UploadBuffer()
@@ -100,9 +103,12 @@ namespace DX
         UploadBuffer& operator=(UploadBuffer&&)      = delete;
 
         ID3D12Resource* get() const { return m_uploadBuffer.Get(); }
+        auto getGPUAdd(uint32_t index = 0) const noexcept { assert(index >= 0); return m_GPUAddr + index * m_elementSize; }
+        auto getElementSize() const noexcept { return m_elementSize; }
 
         void copy(int elementIndex, const T& data)
         {
+            assert(elementIndex >= 0);
             memcpy(&m_mappedData[elementIndex * m_elementSize], &data, sizeof(T));
         }
 
@@ -110,5 +116,6 @@ namespace DX
         Microsoft::WRL::ComPtr<ID3D12Resource> m_uploadBuffer;
         UINT  m_elementSize = 0;
         BYTE* m_mappedData  = nullptr;
+        D3D12_GPU_VIRTUAL_ADDRESS m_GPUAddr = 0; 
     };
 }
