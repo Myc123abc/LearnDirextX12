@@ -50,6 +50,7 @@
 #include <vector>
 #include <unordered_map>
 #include <numbers>
+#include <array>
 
 #ifdef _DEBUG
 #include <dxgidebug.h>

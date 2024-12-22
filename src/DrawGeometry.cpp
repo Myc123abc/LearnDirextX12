@@ -58,14 +58,15 @@ void DrawGeometry::buildShadersAndInputLayout() {
 
 void DrawGeometry::buildConstantBufferResource() {
   int objectNum = 2;
-  int frameNum  = 1;
-  int descriptorNum = objectNum + frameNum;
-  m_frameHeapOffset = objectNum;
+  m_frameHeapOffset = objectNum * FrameResourceNum;
+  int descriptorNum = m_frameHeapOffset + FrameResourceNum;
 
   // frame resource
-  // TODO: change to 3 frames
-  m_objectUploadBuffer = std::make_unique<UploadBuffer<Object>>(m_device.Get(), objectNum);
-  m_frameUploadBuffer = std::make_unique<UploadBuffer<Frame>>(m_device.Get(), 1);
+  for (auto& frameResource : m_frameResources) {
+    frameResource.objectUploadBuffer = std::make_unique<UploadBuffer<Object>>(m_device.Get(), objectNum);
+    frameResource.frameUploadBuffer = std::make_unique<UploadBuffer<Frame>>(m_device.Get(), 1);
+    ThrowIfFailed(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(frameResource.cmdAlloc.GetAddressOf())));
+  }
 
   // descriptor heap
   D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
@@ -77,24 +78,29 @@ void DrawGeometry::buildConstantBufferResource() {
 
   // descriptors
   D3D12_CONSTANT_BUFFER_VIEW_DESC desc = {};
-  desc.SizeInBytes = m_objectUploadBuffer->getElementSize();
+  desc.SizeInBytes = m_frameResources[0].objectUploadBuffer->getElementSize();
   auto descriptor = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetCPUDescriptorHandleForHeapStart());
-  for (int i = 0; i < objectNum; ++i) {
-    desc.BufferLocation = m_objectUploadBuffer->getGPUAdd(i);
-    m_device->CreateConstantBufferView(&desc, descriptor);
-    descriptor.Offset(1, m_cbvSrvUavDescriptorSize);
+  for (const auto& frameResource : m_frameResources) {
+    for (int i = 0; i < objectNum; ++i) {
+      desc.BufferLocation = frameResource.objectUploadBuffer->getGPUAdd(i);
+      m_device->CreateConstantBufferView(&desc, descriptor);
+      descriptor.Offset(1, m_cbvSrvUavDescriptorSize);
+    }
   }
 
-  desc.BufferLocation = m_frameUploadBuffer->getGPUAdd();
-  desc.SizeInBytes = m_frameUploadBuffer->getElementSize();
-  m_device->CreateConstantBufferView(&desc, descriptor);
+  descriptor = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetCPUDescriptorHandleForHeapStart());
+  descriptor.Offset(m_frameHeapOffset, m_cbvSrvUavDescriptorSize);
+  desc.SizeInBytes = m_frameResources[0].frameUploadBuffer->getElementSize();
+  for (const auto& frameResource : m_frameResources) {
+    desc.BufferLocation = frameResource.frameUploadBuffer->getGPUAdd();
+    m_device->CreateConstantBufferView(&desc, descriptor);
+  }
 }
 
 void DrawGeometry::buildShapeGeometry() {
   GeometryGenerator geoGen;
   auto box = geoGen.CreateBox(2.f, 1.f, 1.f, 0);
   auto box2 = geoGen.CreateBox(1.f, 2.f, 1.f, 0);
-  // TODO: tow box share the vertices
 
   std::vector<Vertex> vertices;
   std::vector<uint16_t> indices;
@@ -119,6 +125,7 @@ void DrawGeometry::buildShapeGeometry() {
   m_indicesDefaultBuffer = createDefaultBuffer(m_device.Get(), m_commandList.Get(), indices.data(), m_indicesByteSize, m_indicesUploadBuffer);
 
   RenderItem item;
+  item.numFramesDirty = FrameResourceNum;
 
   XMStoreFloat4x4(&item.objData.world, XMMatrixTranslation(2.f, 0.f, 0.f));
   item.index = 0;
@@ -136,31 +143,17 @@ void DrawGeometry::buildShapeGeometry() {
 }
 
 void DrawGeometry::update() {
-  float x = m_radius * sinf(m_phi) * cosf(m_theta);
-  float z = m_radius * sinf(m_phi) * sinf(m_theta);
-  float y = m_radius * cosf(m_phi);
-
-  auto pos = XMVectorSet(x, y, z, 1.f);
-  auto target = XMVectorZero();
-  auto up = XMVectorSet(0.f, 1.f, 0.f, 0.f);
-  
-  auto view = XMMatrixLookAtLH(pos, target, up);
-  XMStoreFloat4x4(&m_view, view);
-
-  auto proj = XMLoadFloat4x4(&m_proj);
-  auto viewProj = view * proj;
+  DirectX12::update();
 
   Object object;
   XMMATRIX world;
-  for (const auto& item : m_renderItems) {
+  for (auto& item : m_renderItems) {
+    if (item.numFramesDirty == 0) continue;
+    --item.numFramesDirty;
     world = XMLoadFloat4x4(&item.objData.world);
     XMStoreFloat4x4(&object.world, XMMatrixTranspose(world));
-    m_objectUploadBuffer->copy(item.index, object);
+    m_currentFrameResource->objectUploadBuffer->copy(item.index, object);
   }
-
-  Frame frame;
-  XMStoreFloat4x4(&frame.viewProj, XMMatrixTranspose(viewProj));
-  m_frameUploadBuffer->copy(0, frame);
 }
 
 void DrawGeometry::draw() {

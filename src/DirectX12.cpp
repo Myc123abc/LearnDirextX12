@@ -1,15 +1,13 @@
 #include "DirectX12.hpp"
 #include "WindowsUtil.hpp"
 
-#include <string>
 #include <format>
-#include <numbers>
 
-#include <assert.h>
 
 using namespace Microsoft::WRL;
 using namespace Win;
 using namespace DX;
+using namespace DirectX;
 
 
 LRESULT CALLBACK wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -47,12 +45,12 @@ LRESULT DirectX12::wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         if (wParam == 'm' || wParam == 'M')
         {
             m_useMSAA = !m_useMSAA;
-            buildPipeline();
+            setPSO();
         }
         if (wParam == 'w' || wParam == 'W')
         {
             m_wireframe = !m_wireframe;
-            buildPipeline();
+            setPSO();
         }
         return 0;
 
@@ -383,7 +381,7 @@ DirectX12::DirectX12()
         ThrowIfFailed(m_device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(m_MSAArtvHeap.GetAddressOf())));
         heapDesc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
         ThrowIfFailed(m_device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(m_MSAAdsvHeap.GetAddressOf())));
-        createMSAAResources();
+        buildMSAAResources();
     }
 
     // ------------------------------------
@@ -426,17 +424,27 @@ void DirectX12::buildPipeline()
     psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     psoDesc.NumRenderTargets      = 1;
     psoDesc.RTVFormats[0]         = m_backBufferFormat;
-    psoDesc.SampleDesc.Count      = m_useMSAA ? m_sampleCount : 1;
-    psoDesc.SampleDesc.Quality    = m_useMSAA ? m_4xMSAAQualityLevels : 0;
+    psoDesc.SampleDesc.Count      = 1;
+    psoDesc.SampleDesc.Quality    = 0;
     psoDesc.DSVFormat             = m_depthBufferFormat;
-    // TODO: more flexbile which can contains different pso
+
     ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_psos["draw"].ReleaseAndGetAddressOf())));
 
+    psoDesc.SampleDesc.Count      = m_sampleCount;
+    psoDesc.SampleDesc.Quality    = m_4xMSAAQualityLevels;
+    ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_psos["drawMSAA"].ReleaseAndGetAddressOf())));
+
     psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+    ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_psos["wireframeMSAA"].ReleaseAndGetAddressOf())));
+
+    psoDesc.SampleDesc.Count      = 1;
+    psoDesc.SampleDesc.Quality    = 0;
     ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_psos["wireframe"].ReleaseAndGetAddressOf())));
+
+    setPSO();
 }
 
-void DirectX12::createMSAAResources()
+void DirectX12::buildMSAAResources()
 {
     D3D12_RESOURCE_DESC resourceDesc = {};
     resourceDesc.Dimension          = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
@@ -536,7 +544,6 @@ void DirectX12::run()
             if (!m_paused)
             {
                 update();
-                // TODO: don't use drawBegin and drawEnd
                 drawBegin();
                 draw();
                 drawEnd();
@@ -549,30 +556,30 @@ void DirectX12::run()
     }
 }
 
+void DirectX12::setPSO() {
+  if (m_wireframe) 
+    if (m_useMSAA)
+      m_currentPSO = m_psos.at("wireframeMSAA").Get();
+    else
+      m_currentPSO = m_psos.at("wireframe").Get();
+  else
+    if (m_useMSAA)
+      m_currentPSO = m_psos.at("drawMSAA").Get();
+    else
+      m_currentPSO = m_psos.at("draw").Get();
+}
+
 void DirectX12::drawBegin()
 {
+    auto cmdAlloc = m_currentFrameResource->cmdAlloc.Get();
     // Reset command list and allocator
-    ThrowIfFailed(m_commandAllocator->Reset());
-    if (m_wireframe)
-    {
-        ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), m_psos.at("wireframe").Get()));
-    }
-    else
-    {
-        ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), m_psos.at("draw").Get()));
-    }
+    ThrowIfFailed(cmdAlloc->Reset());
+
+    ThrowIfFailed(m_commandList->Reset(cmdAlloc, m_currentPSO));
 
     // Reset viewport and scissor rectangle
     // These need to be reset when the command list is reset
     m_commandList->RSSetViewports(1, &m_viewport);
-
-    // POINT center = { m_width / 2, m_height / 2 };
-    // auto width = m_width / 2;
-    // auto height = m_height / 2;
-    // m_scissorRect.left = center.x - width / 2;
-    // m_scissorRect.right = center.x + width / 2;
-    // m_scissorRect.bottom = center.y + height / 2;
-    // m_scissorRect.top = center.y - height / 2;
     m_commandList->RSSetScissorRects(1, &m_scissorRect);
 
     // Convert back buffer state from present to render target
@@ -656,14 +663,40 @@ void DirectX12::drawEnd()
     ThrowIfFailed(m_swapChain->Present(0, 0));
     m_backbufferIndex = (m_backbufferIndex + 1) % m_backBufferCount;
 
-    if (m_tmp_fr)
-    {
-        tmpFunc_drawEnd();
-    }
-    else 
-    {
-        flushCommandQueue();
-    }
+    m_currentFrameResource->fence = ++m_currentFence;
+    m_commandQueue->Signal(m_fence.Get(), m_currentFence);
+}
+
+void DirectX12::update() {
+  float x = m_radius * sinf(m_phi) * cosf(m_theta);
+  float z = m_radius * sinf(m_phi) * sinf(m_theta);
+  float y = m_radius * cosf(m_phi);
+
+  auto pos = XMVectorSet(x, y, z, 1.f);
+  auto target = XMVectorZero();
+  auto up = XMVectorSet(0.f, 1.f, 0.f, 0.f);
+  
+  auto view = XMMatrixLookAtLH(pos, target, up);
+  XMStoreFloat4x4(&m_view, view);
+
+  auto proj = XMLoadFloat4x4(&m_proj);
+  auto viewProj = view * proj;
+
+  // Move to next frame resource
+  m_currentFrameResourceIndex = (m_currentFrameResourceIndex + 1) % FrameResourceNum;
+  m_currentFrameResource = &m_frameResources[m_currentFrameResourceIndex];
+
+  // Wait if current frame resource is being used.
+  if (m_currentFrameResource->fence != 0 && m_fence->GetCompletedValue() < m_currentFrameResource->fence) {
+    HANDLE event = CreateEventExW(nullptr, nullptr, 0, EVENT_ALL_ACCESS);
+    ThrowIfFailed(m_fence->SetEventOnCompletion(m_currentFence, event));
+    WaitForSingleObject(event, INFINITE);
+    CloseHandle(event);
+  }
+
+  Frame frame;
+  XMStoreFloat4x4(&frame.viewProj, XMMatrixTranspose(viewProj));
+  m_currentFrameResource->frameUploadBuffer->copy(0, frame);
 }
 
 void DirectX12::onResize()
@@ -677,7 +710,7 @@ void DirectX12::onResize()
 
     if (m_useMSAA)
     {
-        createMSAAResources();
+        buildMSAAResources();
     }
 
     // Reset back buffers and swap chain
