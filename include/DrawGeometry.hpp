@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DirectX12.hpp"
+#include "Wave.hpp"
 
 class DrawGeometry : public DirectX12 {
 public:
@@ -25,4 +26,6 @@ private:
   DXGI_FORMAT m_indexFormat = DXGI_FORMAT_R16_UINT;
   uint32_t m_verticesByteSize;
   uint32_t m_indicesByteSize;
+
+  std::unique_ptr<Wave> _wave;
 };

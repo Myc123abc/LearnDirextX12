@@ -5,7 +5,19 @@ using namespace Microsoft::WRL;
 using namespace DX;
 using namespace DirectX;
 
+namespace 
+{
+
+float getTerrainHeight(float x, float z)
+{
+    return 0.3f * (z * sinf(0.1f * x) + x * cosf(0.1f * z));
+}
+
+}
+
 DrawGeometry::DrawGeometry() {
+  _wave = std::make_unique<Wave>(128, 128, 1.f, .03f, 4.f, .2f);
+
   // Root Signature
   // Defines what type of resources are bound to the graphics pipeline.
   buildRootSignature();
@@ -13,8 +25,6 @@ DrawGeometry::DrawGeometry() {
   // Shaders and layout
   // layout => vertex input structure
   buildShadersAndInputLayout();
-
-  buildConstantBufferResource();
 
   buildPipeline();
 
@@ -27,18 +37,22 @@ DrawGeometry::DrawGeometry() {
   m_commandQueue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList**>(m_commandList.GetAddressOf()));
   flushCommandQueue();
 
+  buildConstantBufferResource();
+
   m_verticesUploadBuffer.Reset();
   m_indicesUploadBuffer.Reset();
 }
 
 void DrawGeometry::buildRootSignature() {
-  CD3DX12_DESCRIPTOR_RANGE descRange[2] = {};
-  descRange[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);
-  descRange[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1);
+  // CD3DX12_DESCRIPTOR_RANGE descRange[2] = {};
+  // descRange[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);
+  // descRange[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1);
   
   CD3DX12_ROOT_PARAMETER rootPara[2] = {};
-  rootPara[0].InitAsDescriptorTable(1, &descRange[0]);
-  rootPara[1].InitAsDescriptorTable(1, &descRange[1]);
+  // rootPara[0].InitAsDescriptorTable(1, &descRange[0]);
+  // rootPara[1].InitAsDescriptorTable(1, &descRange[1]);
+  rootPara[0].InitAsConstantBufferView(0);
+  rootPara[1].InitAsConstantBufferView(1);
 
   CD3DX12_ROOT_SIGNATURE_DESC sigDesc = {};
   sigDesc.Init(2, rootPara, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
@@ -57,66 +71,116 @@ void DrawGeometry::buildShadersAndInputLayout() {
 }
 
 void DrawGeometry::buildConstantBufferResource() {
-  int objectNum = 2;
-  m_frameHeapOffset = objectNum * FrameResourceNum;
-  int descriptorNum = m_frameHeapOffset + FrameResourceNum;
+  int objectNum = m_renderItems.size();
+  // m_frameHeapOffset = objectNum * FrameResourceNum;
+  // int descriptorNum = m_frameHeapOffset + FrameResourceNum;
 
   // frame resource
   for (auto& frameResource : m_frameResources) {
     frameResource.objectUploadBuffer = std::make_unique<UploadBuffer<Object>>(m_device.Get(), objectNum);
     frameResource.frameUploadBuffer = std::make_unique<UploadBuffer<Frame>>(m_device.Get(), 1);
+
+    frameResource.waveUploadBuffer = std::make_unique<UploadBuffer<Vertex>>(m_device.Get(), _wave->vertexCount, false);
+
     ThrowIfFailed(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(frameResource.cmdAlloc.GetAddressOf())));
   }
 
-  // descriptor heap
-  D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
-  heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-  heapDesc.NumDescriptors = descriptorNum;
-  heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-  heapDesc.NodeMask = 0;
-  ThrowIfFailed(m_device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(m_cbvHeap.GetAddressOf())));
+  // // descriptor heap
+  // D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+  // heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+  // heapDesc.NumDescriptors = descriptorNum;
+  // heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+  // heapDesc.NodeMask = 0;
+  // ThrowIfFailed(m_device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(m_cbvHeap.GetAddressOf())));
 
-  // descriptors
-  D3D12_CONSTANT_BUFFER_VIEW_DESC desc = {};
-  desc.SizeInBytes = m_frameResources[0].objectUploadBuffer->getElementSize();
-  auto descriptor = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetCPUDescriptorHandleForHeapStart());
-  for (const auto& frameResource : m_frameResources) {
-    for (int i = 0; i < objectNum; ++i) {
-      desc.BufferLocation = frameResource.objectUploadBuffer->getGPUAdd(i);
-      m_device->CreateConstantBufferView(&desc, descriptor);
-      descriptor.Offset(1, m_cbvSrvUavDescriptorSize);
-    }
-  }
+  // // descriptors
+  // D3D12_CONSTANT_BUFFER_VIEW_DESC desc = {};
+  // desc.SizeInBytes = m_frameResources[0].objectUploadBuffer->getElementSize();
+  // auto descriptor = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetCPUDescriptorHandleForHeapStart());
+  // for (const auto& frameResource : m_frameResources) {
+  //   for (int i = 0; i < objectNum; ++i) {
+  //     desc.BufferLocation = frameResource.objectUploadBuffer->getGPUAdd(i);
+  //     m_device->CreateConstantBufferView(&desc, descriptor);
+  //     descriptor.Offset(1, m_cbvSrvUavDescriptorSize);
+  //   }
+  // }
 
-  descriptor = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetCPUDescriptorHandleForHeapStart());
-  descriptor.Offset(m_frameHeapOffset, m_cbvSrvUavDescriptorSize);
-  desc.SizeInBytes = m_frameResources[0].frameUploadBuffer->getElementSize();
-  for (const auto& frameResource : m_frameResources) {
-    desc.BufferLocation = frameResource.frameUploadBuffer->getGPUAdd();
-    m_device->CreateConstantBufferView(&desc, descriptor);
-  }
+  // descriptor = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetCPUDescriptorHandleForHeapStart());
+  // descriptor.Offset(m_frameHeapOffset, m_cbvSrvUavDescriptorSize);
+  // desc.SizeInBytes = m_frameResources[0].frameUploadBuffer->getElementSize();
+  // for (const auto& frameResource : m_frameResources) {
+  //   desc.BufferLocation = frameResource.frameUploadBuffer->getGPUAdd();
+  //   m_device->CreateConstantBufferView(&desc, descriptor);
+  // }
 }
 
 void DrawGeometry::buildShapeGeometry() {
+  // Generate data
   GeometryGenerator geoGen;
-  auto box = geoGen.CreateBox(2.f, 1.f, 1.f, 0);
-  auto box2 = geoGen.CreateBox(1.f, 2.f, 1.f, 0);
+  auto grid = geoGen.CreateGrid(160.f, 160.f, 50, 50);
 
   std::vector<Vertex> vertices;
   std::vector<uint16_t> indices;
 
-  auto verticesSize = box.Vertices.size() + box2.Vertices.size();
-  auto indicesSize = box.Indices32.size() + box2.Indices32.size();
+  auto verticesSize = grid.Vertices.size();
+  // the vertex data of wave is in frameResources
+  assert(_wave->vertexCount < 0x0000ffff);
+  auto indicesSize = grid.Indices32.size() + _wave->triangleCount * 3;
 
   vertices.reserve(verticesSize);
-  for (const auto& vertex : box.Vertices)
-    vertices.emplace_back(Vertex{ vertex.Position, XMFLOAT4(Colors::Red) });
-  for (const auto& vertex : box2.Vertices)
-    vertices.emplace_back(Vertex{ vertex.Position, XMFLOAT4(Colors::Green) });
+  for (const auto& gridVertex : grid.Vertices)
+  {
+      // vertices.emplace_back(Vertex{ vertex.Position, XMFLOAT4(Colors::Green) });
+      Vertex vertex = { gridVertex.Position };
+      vertex.pos.y = getTerrainHeight(vertex.pos.x, vertex.pos.z);
+
+      if (vertex.pos.y < -10.f)
+      {
+          vertex.color = XMFLOAT4(1.f, .96f, .62f, 1.f);
+      }
+      else if (vertex.pos.y < 5.f)
+      {
+          vertex.color = XMFLOAT4(.48f, .77f, .46f, 1.f);
+      }
+      else if (vertex.pos.y < 12.f)
+      {
+          vertex.color = XMFLOAT4(.1f, .48f, .19f, 1.f);
+      }
+      else if (vertex.pos.y < 20.f)
+      {
+          vertex.color = XMFLOAT4(.45f, .39f, .34f, 1.f);
+      }
+      else 
+      {
+          vertex.color = XMFLOAT4(1.f, 1.f, 1.f, 1.f);
+      }
+
+      vertices.push_back(vertex);
+  }
 
   indices.reserve(indicesSize);
-  indices.append_range(box.GetIndices16());
-  indices.append_range(box2.GetIndices16());
+  indices.append_range(grid.GetIndices16());
+  indices.insert(indices.end(), indices.capacity() - indices.size(), 0);
+
+	// Iterate over each quad.
+	int m = _wave->rowCount;
+	int n = _wave->columnCount;
+	int k = grid.Indices32.size();
+	for(int i = 0; i < m - 1; ++i)
+	{
+		for(int j = 0; j < n - 1; ++j)
+		{
+			indices[k] = i*n + j;
+			indices[k + 1] = i*n + j + 1;
+			indices[k + 2] = (i + 1)*n + j;
+
+			indices[k + 3] = (i + 1)*n + j;
+			indices[k + 4] = i*n + j + 1;
+			indices[k + 5] = (i + 1)*n + j + 1;
+
+			k += 6; // next quad
+		}
+	}
 
   m_verticesByteSize = vertices.size() * sizeof(Vertex);
   m_indicesByteSize = indices.size() * sizeof(uint16_t);
@@ -124,22 +188,31 @@ void DrawGeometry::buildShapeGeometry() {
   m_verticesDefaultBuffer = createDefaultBuffer(m_device.Get(), m_commandList.Get(), vertices.data(), m_verticesByteSize, m_verticesUploadBuffer);
   m_indicesDefaultBuffer = createDefaultBuffer(m_device.Get(), m_commandList.Get(), indices.data(), m_indicesByteSize, m_indicesUploadBuffer);
 
+  // Render Item
+  // Describe data position
   RenderItem item;
   item.numFramesDirty = FrameResourceNum;
 
-  XMStoreFloat4x4(&item.objData.world, XMMatrixTranslation(2.f, 0.f, 0.f));
+  XMStoreFloat4x4(&item.objData.world, XMMatrixTranslation(0.f, -50.f, 0.f));
   item.index = 0;
-  item.indicesSize = box.Indices32.size();
+  item.indicesSize = grid.Indices32.size();
   item.verticesOffset = 0;
   item.indicesOffset = 0;
   m_renderItems.push_back(item);
-  
-  XMStoreFloat4x4(&item.objData.world, XMMatrixTranslation(-2.f, 0.f, 0.f));
+
   item.index = 1;
-  item.indicesSize = box2.Indices32.size();
-  item.verticesOffset = box.Vertices.size();
-  item.indicesOffset = box.Indices32.size();
+  item.objData.world = createIdentity4x4();
+  item.indicesSize = indicesSize - item.indicesSize;
+  item.verticesOffset = -1;
+  item.indicesOffset = grid.Indices32.size();
   m_renderItems.push_back(item);
+  
+  // XMStoreFloat4x4(&item.objData.world, XMMatrixTranslation(0.f, 0.f, 0.f));
+  // item.index = 1;
+  // item.indicesSize = grid.Indices32.size();
+  // item.verticesOffset = box.Vertices.size();
+  // item.indicesOffset = box.Indices32.size();
+  // m_renderItems.push_back(item);
 }
 
 void DrawGeometry::update() {
@@ -157,14 +230,15 @@ void DrawGeometry::update() {
 }
 
 void DrawGeometry::draw() {
-  ID3D12DescriptorHeap* descHeaps[] = { m_cbvHeap.Get() };
-  m_commandList->SetDescriptorHeaps(_countof(descHeaps), descHeaps);
+  // ID3D12DescriptorHeap* descHeaps[] = { m_cbvHeap.Get() };
+  // m_commandList->SetDescriptorHeaps(_countof(descHeaps), descHeaps);
   m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
 
   // Pass frame data
-  auto addr = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetGPUDescriptorHandleForHeapStart());
-  addr.Offset(m_frameHeapOffset, m_cbvSrvUavDescriptorSize);
-  m_commandList->SetGraphicsRootDescriptorTable(1, addr);
+  // auto addr = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetGPUDescriptorHandleForHeapStart());
+  // addr.Offset(m_frameHeapOffset, m_cbvSrvUavDescriptorSize);
+  // m_commandList->SetGraphicsRootDescriptorTable(1, addr);
+  m_commandList->SetGraphicsRootConstantBufferView(1, m_currentFrameResource->frameUploadBuffer->get()->GetGPUVirtualAddress());
 
   m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
@@ -181,12 +255,27 @@ void DrawGeometry::draw() {
   indexBufferView.SizeInBytes = m_indicesByteSize;
   m_commandList->IASetIndexBuffer(&indexBufferView);
 
-  addr = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetGPUDescriptorHandleForHeapStart());
+  // addr = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetGPUDescriptorHandleForHeapStart());
 
+  auto objByteSize = getMultiplesOf256<sizeof(Object)>();
+  auto objAddr = m_currentFrameResource->objectUploadBuffer->get()->GetGPUVirtualAddress();
   for (const auto& item : m_renderItems) {
-    m_commandList->SetGraphicsRootDescriptorTable(0, addr);
+    // m_commandList->SetGraphicsRootDescriptorTable(0, addr);
+    objAddr += item.index * objByteSize; 
+    m_commandList->SetGraphicsRootConstantBufferView(0, objAddr);
+
+    if (item.verticesOffset == -1)
+    {
+      auto tmp = vertexBufferView;
+      vertexBufferView.BufferLocation = m_currentFrameResource->waveUploadBuffer->get()->GetGPUVirtualAddress();
+      vertexBufferView.SizeInBytes = _wave->vertexCount * sizeof(Vertex);
+      m_commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
+      m_commandList->DrawIndexedInstanced(item.indicesSize, 1, item.indicesOffset, 0, 0);
+      continue;      
+    }
+
     m_commandList->DrawIndexedInstanced(item.indicesSize, 1, item.indicesOffset, item.verticesOffset, 0);
-    addr.Offset(1, m_cbvSrvUavDescriptorSize);
+    // addr.Offset(1, m_cbvSrvUavDescriptorSize);
   }
 }
 

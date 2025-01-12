@@ -73,6 +73,7 @@ namespace DX
             assert(device != nullptr);
             assert(elementCount > 0);
 
+            m_elementSize = sizeof(T);
             if (isConstantBuffer)
                 m_elementSize = getMultiplesOf256<sizeof(T)>();
 

@@ -31,6 +31,8 @@ struct FrameResource {
   std::unique_ptr<DX::UploadBuffer<Object>> objectUploadBuffer;
   std::unique_ptr<DX::UploadBuffer<Frame>> frameUploadBuffer;
 
+  std::unique_ptr<DX::UploadBuffer<Vertex>> waveUploadBuffer;
+
   uint64_t fence = 0;
 
   Microsoft::WRL::ComPtr<ID3D12CommandAllocator> cmdAlloc;
@@ -173,7 +175,7 @@ protected:
   int m_currentFrameResourceIndex = 0;
   FrameResource* m_currentFrameResource = nullptr;
 
-  Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_cbvHeap; 
+  // Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_cbvHeap; 
   std::vector<RenderItem> m_renderItems;
-  uint32_t m_frameHeapOffset = 0;
+  // uint32_t m_frameHeapOffset = 0;
 };

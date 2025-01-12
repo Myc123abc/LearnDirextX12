@@ -14,6 +14,6 @@ add_executable(${PROJECT_NAME} WIN32 ${SOURCES})
 
 target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
-target_link_libraries(${PROJECT_NAME} PRIVATE dxgi d3d12 d3dcompiler dxguid)
+target_link_libraries(${PROJECT_NAME} PRIVATE dxgi d3d12 d3dcompiler dxguid concrt)
 
 target_precompile_headers(${PROJECT_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/include/pch.hpp")
