@@ -158,8 +158,8 @@ protected:
 
   // Camera
   float m_theta  = 1.5f * DirectX::XM_PI;
-  float m_phi    = DirectX::XM_PIDIV2; // DirectX::XM_PIDIV4;
-  float m_radius = 5.f;
+  float m_phi    = DirectX::XM_PIDIV2 - .1f; // DirectX::XM_PIDIV4;
+  float m_radius = 50.f;
 
   // Coordinate System
   DirectX::XMFLOAT4X4 m_world = DX::createIdentity4x4();

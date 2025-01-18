@@ -1,5 +1,6 @@
 #include "DrawGeometry.hpp"
 #include "GeometryGenerator.h"
+#include <random>
 
 using namespace Microsoft::WRL;
 using namespace DX;
@@ -16,7 +17,7 @@ float getTerrainHeight(float x, float z)
 }
 
 DrawGeometry::DrawGeometry() {
-  _wave = std::make_unique<Wave>(128, 128, 1.f, .03f, 4.f, .2f);
+  _wave = std::make_unique<Waves>(128, 128, 1.f, .03f, 4.f, .2f);
 
   // Root Signature
   // Defines what type of resources are bound to the graphics pipeline.
@@ -39,7 +40,9 @@ DrawGeometry::DrawGeometry() {
 
   buildConstantBufferResource();
 
+  // Vertices only have grid which unchange, can reset.
   m_verticesUploadBuffer.Reset();
+  // Indicies not change, can reset.
   m_indicesUploadBuffer.Reset();
 }
 
@@ -80,7 +83,7 @@ void DrawGeometry::buildConstantBufferResource() {
     frameResource.objectUploadBuffer = std::make_unique<UploadBuffer<Object>>(m_device.Get(), objectNum);
     frameResource.frameUploadBuffer = std::make_unique<UploadBuffer<Frame>>(m_device.Get(), 1);
 
-    frameResource.waveUploadBuffer = std::make_unique<UploadBuffer<Vertex>>(m_device.Get(), _wave->vertexCount, false);
+    frameResource.waveUploadBuffer = std::make_unique<UploadBuffer<Vertex>>(m_device.Get(), _wave->VertexCount(), false);
 
     ThrowIfFailed(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(frameResource.cmdAlloc.GetAddressOf())));
   }
@@ -124,9 +127,12 @@ void DrawGeometry::buildShapeGeometry() {
 
   auto verticesSize = grid.Vertices.size();
   // the vertex data of wave is in frameResources
-  assert(_wave->vertexCount < 0x0000ffff);
-  auto indicesSize = grid.Indices32.size() + _wave->triangleCount * 3;
+  assert(_wave->VertexCount() < 0x0000ffff);
+  auto indicesSize = grid.Indices32.size() + _wave->TriangleCount() * 3;
 
+  //
+  // Vertices of Grid
+  //
   vertices.reserve(verticesSize);
   for (const auto& gridVertex : grid.Vertices)
   {
@@ -159,12 +165,20 @@ void DrawGeometry::buildShapeGeometry() {
   }
 
   indices.reserve(indicesSize);
+
+  //
+  // Indices of Grid
+  //
   indices.append_range(grid.GetIndices16());
+
+  //
+  // Indices of Wave
+  //
   indices.insert(indices.end(), indices.capacity() - indices.size(), 0);
 
 	// Iterate over each quad.
-	int m = _wave->rowCount;
-	int n = _wave->columnCount;
+	int m = _wave->RowCount();
+	int n = _wave->ColumnCount();
 	int k = grid.Indices32.size();
 	for(int i = 0; i < m - 1; ++i)
 	{
@@ -182,6 +196,9 @@ void DrawGeometry::buildShapeGeometry() {
 		}
 	}
 
+  //
+  // Create GPU resources and save information of vertices and indicies 
+  //
   m_verticesByteSize = vertices.size() * sizeof(Vertex);
   m_indicesByteSize = indices.size() * sizeof(uint16_t);
 
@@ -193,7 +210,8 @@ void DrawGeometry::buildShapeGeometry() {
   RenderItem item;
   item.numFramesDirty = FrameResourceNum;
 
-  XMStoreFloat4x4(&item.objData.world, XMMatrixTranslation(0.f, -50.f, 0.f));
+  // XMStoreFloat4x4(&item.objData.world, XMMatrixTranslation(0.f, -50.f, 0.f));
+  item.objData.world = createIdentity4x4();
   item.index = 0;
   item.indicesSize = grid.Indices32.size();
   item.verticesOffset = 0;
@@ -203,6 +221,7 @@ void DrawGeometry::buildShapeGeometry() {
   item.index = 1;
   item.objData.world = createIdentity4x4();
   item.indicesSize = indicesSize - item.indicesSize;
+  // Vertices of Wave is dynamic, so set -1 to represent it.
   item.verticesOffset = -1;
   item.indicesOffset = grid.Indices32.size();
   m_renderItems.push_back(item);
@@ -227,6 +246,48 @@ void DrawGeometry::update() {
     XMStoreFloat4x4(&object.world, XMMatrixTranspose(world));
     m_currentFrameResource->objectUploadBuffer->copy(item.index, object);
   }
+
+  //
+  // Update wave
+  //
+  // Every quarter second, generate a random wave.
+	static float t_base = 0.0f;
+	if((m_timer.getTime() - t_base) >= 0.25f)
+	{
+		t_base += 0.25f;
+
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    static std::uniform_int_distribution<> dist;
+    static std::uniform_real_distribution<> fdist(.2f, .5f);
+    
+    dist.param(std::uniform_int_distribution<>::param_type(4, _wave->RowCount() - 5));
+    int i = dist(gen);
+    dist.param(std::uniform_int_distribution<>::param_type(4, _wave->ColumnCount() - 5));
+    int j = dist(gen);
+
+    float r = fdist(gen);
+
+		_wave->Disturb(i, j, r);
+	}
+
+	// Update the wave simulation.
+	_wave->Update(m_timer.getDelta());
+
+	// Update the wave vertex buffer with the new solution.
+	auto currWavesVB = m_currentFrameResource->waveUploadBuffer.get();
+	for(int i = 0; i < _wave->VertexCount(); ++i)
+	{
+		Vertex v;
+
+		v.pos = _wave->Position(i);
+        v.color = XMFLOAT4(DirectX::Colors::Blue);
+
+		currWavesVB->copy(i, v);
+	}
+
+	// Set the dynamic VB of the wave renderitem to the current frame VB.
+	// mWavesRitem->Geo->VertexBufferGPU = currWavesVB->Resource();
 }
 
 void DrawGeometry::draw() {
@@ -268,7 +329,7 @@ void DrawGeometry::draw() {
     {
       auto tmp = vertexBufferView;
       vertexBufferView.BufferLocation = m_currentFrameResource->waveUploadBuffer->get()->GetGPUVirtualAddress();
-      vertexBufferView.SizeInBytes = _wave->vertexCount * sizeof(Vertex);
+      vertexBufferView.SizeInBytes = _wave->VertexCount() * sizeof(Vertex);
       m_commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
       m_commandList->DrawIndexedInstanced(item.indicesSize, 1, item.indicesOffset, 0, 0);
       continue;      

@@ -1,36 +1,63 @@
-#pragma once
+//***************************************************************************************
+// Waves.h by Frank Luna (C) 2011 All Rights Reserved.
+//
+// Performs the calculations for the wave simulation.  After the simulation has been
+// updated, the client must copy the current solution into vertex buffers for rendering.
+// This class only does the calculations, it does not do any drawing.
+//***************************************************************************************
 
-class Wave
+#ifndef WAVES_H
+#define WAVES_H
+
+#include <vector>
+#include <DirectXMath.h>
+
+class Waves
 {
 public:
-    Wave() = default;
-    Wave(int m, int n, float dx, float dt, float speed, float damping);
-    ~Wave() = default;
+    Waves(int m, int n, float dx, float dt, float speed, float damping);
+    Waves(const Waves& rhs) = delete;
+    Waves& operator=(const Waves& rhs) = delete;
+    ~Waves();
 
-    int rowCount = 0;
-    int columnCount = 0;
-    int vertexCount = 0;
-    int triangleCount = 0;
-    float width = 0.f;
-    float depth = 0.f;
+	int RowCount()const;
+	int ColumnCount()const;
+	int VertexCount()const;
+	int TriangleCount()const;
+	float Width()const;
+	float Depth()const;
 
-    const auto& position(int i) const { return _currSolution[i]; }
-    const auto& normal(int i) const { return _normals[i]; }
-    const auto& tangentX(int i) const { return _normals[i]; }
+	// Returns the solution at the ith grid point.
+    const DirectX::XMFLOAT3& Position(int i)const { return mCurrSolution[i]; }
 
-    void update(float dt);
-    void disturb(int i, int j, float magnitude);
+	// Returns the solution normal at the ith grid point.
+    const DirectX::XMFLOAT3& Normal(int i)const { return mNormals[i]; }
+
+	// Returns the unit tangent vector at the ith grid point in the local x-axis direction.
+    const DirectX::XMFLOAT3& TangentX(int i)const { return mTangentX[i]; }
+
+	void Update(float dt);
+	void Disturb(int i, int j, float magnitude);
 
 private:
-    std::vector<DirectX::XMFLOAT3> _prevSolution; 
-    std::vector<DirectX::XMFLOAT3> _currSolution; 
-    std::vector<DirectX::XMFLOAT3> _normals;
-    std::vector<DirectX::XMFLOAT3> _tangentX;
+    int mNumRows = 0;
+    int mNumCols = 0;
 
-    float mk1 = 0;
-    float mk2 = 0;
-    float mk3 = 0;
+    int mVertexCount = 0;
+    int mTriangleCount = 0;
 
-    float _timeStep = 0.f;
-    float _spatialStep = 0.f; 
+    // Simulation constants we can precompute.
+    float mK1 = 0.0f;
+    float mK2 = 0.0f;
+    float mK3 = 0.0f;
+
+    float mTimeStep = 0.0f;
+    float mSpatialStep = 0.0f;
+
+    std::vector<DirectX::XMFLOAT3> mPrevSolution;
+    std::vector<DirectX::XMFLOAT3> mCurrSolution;
+    std::vector<DirectX::XMFLOAT3> mNormals;
+    std::vector<DirectX::XMFLOAT3> mTangentX;
 };
+
+#endif // WAVES_H

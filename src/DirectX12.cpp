@@ -822,15 +822,15 @@ void DirectX12::onMouseMove(WPARAM btnState, int x, int y)
         m_theta -= dx;
         m_phi   -= dy;
 
-        m_phi = std::clamp(m_phi, 0.001f, std::numbers::pi_v<float> - 0.001f);
+        m_phi = std::clamp(m_phi, 0.1f, std::numbers::pi_v<float> - 0.1f);
     }
     else if (btnState & MK_RBUTTON)
     {
-        float dx = 0.005f * static_cast<float>(x - m_mousePosition.x);
-        float dy = 0.005f * static_cast<float>(y - m_mousePosition.y);
+        float dx = 0.2f * static_cast<float>(x - m_mousePosition.x);
+        float dy = 0.2f * static_cast<float>(y - m_mousePosition.y);
 
         m_radius -= dx - dy;
-        m_radius = std::clamp(m_radius, 3.f, 15.f);
+        m_radius = std::clamp(m_radius, 5.f, 150.f);
     }
 
     m_mousePosition.x = x;
@@ -841,9 +841,9 @@ void DirectX12::onMouseWheel(WPARAM wParam)
 {
     auto delta = GET_WHEEL_DELTA_WPARAM(wParam);
 
-    constexpr float zoomSensitivity = 0.005f;
+    constexpr float zoomSensitivity = 0.2f;
 
     m_radius -= delta * zoomSensitivity;
 
-    m_radius = std::clamp(m_radius, 3.f, 15.f);
+    m_radius = std::clamp(m_radius, 5.f, 150.f);
 }

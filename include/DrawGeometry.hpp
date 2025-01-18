@@ -27,5 +27,5 @@ private:
   uint32_t m_verticesByteSize;
   uint32_t m_indicesByteSize;
 
-  std::unique_ptr<Wave> _wave;
+  std::unique_ptr<Waves> _wave;
 };
